@@ -2,4 +2,3 @@ videos
 dataset
 *.pt
 frames
-dataset.yaml
