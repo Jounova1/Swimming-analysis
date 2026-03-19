@@ -1,27 +1,3 @@
-<<<<<<< HEAD
-from ultralytics import YOLO
-import cv2
-
-model = YOLO("best.pt")
-
-cap = cv2.VideoCapture("project2.mp4")
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    results = model(frame)
-    frame = results[0].plot()
-
-    cv2.imshow("result", frame)
-
-    if cv2.waitKey(1) == 27:
-        break
-
-cap.release()
-cv2.destroyAllWindows()
-=======
 import time
 import cv2
 from ultralytics import YOLO
@@ -107,4 +83,3 @@ if writer:
     writer.release()
 cv2.destroyAllWindows()
 print("\nDone.")
->>>>>>> c2eba27109d5ce886fe725621475426ae1166196
