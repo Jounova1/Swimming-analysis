@@ -123,12 +123,11 @@ def class_from_filename(stem: str) -> str:
     Extract class name from video filename.
     Takes everything before the first underscore.
     Example:
-      normal_video1     → normal
-      splitfins_session2 → splitfins
-      monofin_above_A3  → monofin
-      apnea_B4_underwater → apnea
+      under_project1.mp4   →   under_project1_0001.jpg
+      BF_project2.mp4 →   surface_project2_0001.jpg
+      monofin_project3.mp4 →   monofin_project3_0001.jpg
     """
-    return stem.split("_")[0]
+    return stem
 
 
 def main():
