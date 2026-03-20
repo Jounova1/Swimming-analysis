@@ -1,7 +1,18 @@
+package com.swimming.services;
 
-Public SwimmerService (SwimmerRepository swimmerRepository) 
-{
-    {
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+
+import com.swimming.models.Swimmer;
+import com.swimming.repositories.SwimmerRepository;
+
+@Service
+public class SwimmerService {
+
+    private final SwimmerRepository swimmerRepository;
+
+    public SwimmerService(SwimmerRepository swimmerRepository) {
         this.swimmerRepository = swimmerRepository;
     }
 
@@ -18,17 +29,17 @@ Public SwimmerService (SwimmerRepository swimmerRepository)
     }
 
     public Swimmer updateSwimmer(Long id, Swimmer swimmerDetails) {
-        Swimmer swimmer = swimmerRepository.findById(id).orElse(null);
-        if (swimmer != null) {
-            swimmer.setName(swimmerDetails.getName());
-            swimmer.setAge(swimmerDetails.getAge());
-            swimmer.setGender(swimmerDetails.getGender());
-            return swimmerRepository.save(swimmer);
+        if (swimmerRepository.existsById(id)) {
+            return swimmerRepository.save(swimmerDetails);
         }
         return null;
     }
 
     public void deleteSwimmer(Long id) {
         swimmerRepository.deleteById(id);
+    }
+
+    public void saveSwimmer(Swimmer swimmer) {
+        swimmerRepository.save(swimmer);
     }
 }
