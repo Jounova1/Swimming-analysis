@@ -1,4 +1,4 @@
-path: /content/drive/MyDrive/mashro3/dataset
+path: ai/training/dataset
 train: images/train
 val: images/val
 

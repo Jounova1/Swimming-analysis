@@ -38,7 +38,7 @@ def main() -> None:
 	default_data_yaml = script_dir / "dataset.yaml"
 
 	# Use your dataset yaml location; for Colab, this is commonly under /content/...
-	data_yaml = "/content/dataset.yaml"
+	data_yaml = r"D:\Swimming-analysis\ai\training\dataset.yaml"
 
 	# --------------------------------------------
 	# Model choice for transfer learning
@@ -73,8 +73,8 @@ def main() -> None:
 	results = model.train(
 		# Data and model IO
 		data=data_yaml,
-		imgsz=960,
-		epochs=300,
+		imgsz=640,
+		epochs=100,
 		batch=batch,
 		project="runs/train",
 		name="yolov8_small_underwater",
@@ -114,7 +114,7 @@ def main() -> None:
 		erasing=0.25,         # Simulates occlusions/splashes/partial visibility.
 
 		# Runtime + reproducibility
-		device=0,
+		device="cuda",       # Use GPU if available; falls back to CPU if not.
 		workers=2,            # Conservative worker count for Colab memory stability.
 		cache="ram",         # Faster epochs if RAM allows; change to False if RAM is limited.
 		amp=True,             # Mixed precision for speed + lower VRAM.

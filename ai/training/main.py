@@ -4,7 +4,7 @@ from ultralytics import YOLO
 
 # --- Config ---
 MODEL_PATH   = "best.pt"
-VIDEO_SOURCE = "project8.mp4"   # or 0 for Pi camera live feed
+VIDEO_SOURCE = "underwater_2.mp4"   # or 0 for Pi camera live feed
 CONF         = 0.45              # confidence threshold
 INPUT_WIDTH  = 640               # resize frame before inference
 INPUT_HEIGHT = 360
@@ -12,7 +12,7 @@ SAVE_OUTPUT  = False             # set True to save result video
 
 # --------------
 
-model = YOLO(MODEL_PATH)
+model = YOLO("best.pt")
 cap   = cv2.VideoCapture(VIDEO_SOURCE)
 
 if not cap.isOpened():
