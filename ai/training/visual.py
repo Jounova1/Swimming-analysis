@@ -1,9 +1,9 @@
 import cv2
 
-img = cv2.imread("image.jpg")
+img = cv2.imread("flip_turn_0000.jpg")
 h, w, _ = img.shape
 
-with open("image.txt") as f:
+with open("flip_turn_0000.txt") as f:
     for line in f:
         c, x, y, bw, bh = map(float, line.split())
         
