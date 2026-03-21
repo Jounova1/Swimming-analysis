@@ -1,4 +1,4 @@
-import cv2
+import cv2 
 
 img = cv2.imread("image.jpg")
 h, w, _ = img.shape
