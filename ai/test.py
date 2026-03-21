@@ -1,4 +1,9 @@
 from ultralytics import YOLO
 
-model = YOLO("yolov8n.pt")
-print("YOLO working")
+model = YOLO("best.pt")
+
+results = model.predict(
+    source="test.jpg",
+    conf=0.25,
+    save=True
+)
