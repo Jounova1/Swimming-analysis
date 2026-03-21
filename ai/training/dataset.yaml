@@ -1,8 +1,7 @@
-path: ai/training/dataset
+path: D:/Swimming-analysis/ai/training/dataset
+
 train: images/train
 val: images/val
 
 nc: 1
-names:
-  0: swimmer
-  
+names: ["swimmer"]
