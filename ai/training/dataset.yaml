@@ -1,8 +1,8 @@
-path: ./dataset
+path: /content/drive/MyDrive/mashro3/dataset
 train: images/train
 val: images/val
-test: images/test
 
 nc: 1
 names:
-  0: swimmergit ls-files | findstr ".pt .mp4 .rar .zip"
+  0: swimmer
+  
