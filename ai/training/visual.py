@@ -1,4 +1,4 @@
-import cv2
+import cv2 
 
 img = cv2.imread("flip_turn_0000.jpg")
 h, w, _ = img.shape
