@@ -5,3 +5,5 @@ frames
 *.mp4
 runs
 data
+*.jpg
+*.txt
