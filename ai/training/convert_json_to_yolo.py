@@ -217,10 +217,10 @@ def main() -> None:
     # PATHS
     # =============================
     # غيّر المسار ده حسب مشروعك
-    dataset_root = Path(r"D:\Swimming-analysis\ai\training\data")
+    dataset_root = Path(r"C:\Swimming-analysis\ai\training\data")
 
     # لو dataset.yaml عندك في مكان تاني، عدله هنا
-    data_yaml = r"D:\Swimming-analysis\ai\training\dataset.yaml"
+    data_yaml = r"C:\Swimming-analysis\ai\training\dataset_1.yaml"
 
     # =============================
     # CLASSES
@@ -250,7 +250,7 @@ def main() -> None:
         # Data
         data=data_yaml,
         imgsz=640,
-        epochs=300,
+        epochs=150,
         batch=8,                  # جرّب 12 بعدين لو VRAM مستحملة
         project="runs/train",
         name="yolo11m_swimmer_2000imgs",
@@ -268,7 +268,7 @@ def main() -> None:
         warmup_bias_lr=0.05,
 
         # Regularization / stability
-        patience=40,
+        patience=30,
         freeze=0,
         close_mosaic=15,
         label_smoothing=0.0,
