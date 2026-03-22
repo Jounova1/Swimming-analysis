@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 
-model = YOLO("last.pt")
+model = YOLO(r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_clean\weights\best.pt")
 
 results = model.predict(
     source="flip_turn_0000.jpg",

@@ -6,3 +6,5 @@ frames
 runs
 *.mp4
 data
+*.jpg
+*.txt
