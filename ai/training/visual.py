@@ -1,9 +1,9 @@
 import cv2 
 
-img = cv2.imread("T100000.jpg")
+img = cv2.imread("surface_3_00001.jpg")
 h, w, _ = img.shape # get image dimensions for converting YOLO format to pixel coordinates
 
-with open("T100000.txt") as f:
+with open("surface_3_00001.xmlpy visua") as f:
     for line in f:
         c, x, y, bw, bh = map(float, line.split()) # read class and bounding box coordinates from YOLO format (class, x_center, y_center, width, height)
         

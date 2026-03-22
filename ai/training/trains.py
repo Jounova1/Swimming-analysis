@@ -62,7 +62,7 @@ def main() -> None:
         copy_paste=0.0,
         erasing=0.15,
 
-        device=0,# set to 0 or "cuda:0" to use GPU, or "cpu" to train on CPU (not recommended)
+        device=1,# set to 0 or "cuda:0" to use GPU, or "cpu" to train on CPU (not recommended)
         workers=4,# number of dataloader workers, adjust based on your CPU cores and system capabilities
         cache=False,# set to True to cache images in RAM for faster training, but requires more memory
         amp=True,# use mixed precision training for faster performance on compatible GPUs
