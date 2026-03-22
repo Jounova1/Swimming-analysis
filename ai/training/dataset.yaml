@@ -1,11 +1,3 @@
-path: D:/Swimming-analysis/ai/training/dataset
-
-train: images/train
-val: images/val
-
-nc: 1
-names: ["swimmer"]
-
 path: D:\Swimming-analysis\ai\training\data
 train: images/Trainset
 val: images/Valset
