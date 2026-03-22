@@ -1,8 +1,15 @@
-path: ./dataset
+path: D:/Swimming-analysis/ai/training/dataset
+
 train: images/train
 val: images/val
-test: images/test
 
 nc: 1
+names: ["swimmer"]
+
+path: D:\Swimming-analysis\ai\training\data
+train: images/Trainset
+val: images/Valset
+test: images/Testset
+
 names:
-  0: swimmergit ls-files | findstr ".pt .mp4 .rar .zip"
+  0: swimmer

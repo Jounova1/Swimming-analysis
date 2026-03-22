@@ -120,12 +120,11 @@ VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".MP4", ".AVI", ".MOV")
 
 def class_from_filename(stem: str) -> str:
     """
-    Extract class name from video filename.
-    Takes everything before the first underscore.
+    Uses full video filename as class name prefix.
     Example:
-      under_project1.mp4   →   under_project1_0001.jpg
-      BF_project2.mp4 →   surface_project2_0001.jpg
-      monofin_project3.mp4 →   monofin_project3_0001.jpg
+      under_project1   →   under_project1_0001.jpg
+      BF_project2      →   BF_project2_0001.jpg
+      monofin_project3 →   monofin_project3_0001.jpg
     """
     return stem
 

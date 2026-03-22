@@ -20,4 +20,28 @@ public class StrokeMetric {
 
     @ManyToOne
     private Session session;
+
+    public void setStrokeRate(double strokeRate) {
+        this.stroke_rate = strokeRate;
+    }
+
+    public double getStrokeRate() {
+        return stroke_rate;
+    }
+
+    public void setVelocity(double velocity) {
+        this.avg_velocity = velocity;
+    }
+
+    public double getVelocity() {
+        return avg_velocity;
+    }
+
+    public void setSession(Session session) {
+        this.session = session;
+    }
+
+    public Session getSession() {
+        return session;
+    }
 }
