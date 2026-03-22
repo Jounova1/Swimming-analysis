@@ -179,3 +179,33 @@ class SwimmerTracker:
 			cv2.destroyAllWindows()
 
 		return observations
+# inference/detect_swimmer.py (مثال تخيلي)
+def get_initial_roi(video_path: str):
+    """
+    Return a reasonable ROI (x, y, w, h) or None.
+    Plug your detection code here.
+    """
+    # TODO: put your actual detection
+    return None
+# ai/inference/detect_swimmer.py
+
+from typing import Optional, Tuple
+
+def get_initial_roi(video_path: str) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Temporary stub.
+    Return an ROI (x, y, w, h) if you have a detector; otherwise return None
+    to let the pipeline use its default center ROI.
+    """
+    return None
+
+# ai/inference/detect_swimmer.py
+from typing import Optional, Tuple
+
+def get_initial_roi(video_path: str) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Stub (safe default).
+    Return (x, y, w, h) if you have an automatic detector.
+    Return None to let the pipeline use CLI --roi or a centered default ROI.
+    """
+    return None

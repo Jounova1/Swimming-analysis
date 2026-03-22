@@ -2,3 +2,4 @@ videos
 dataset
 *.pt
 frames
+*.mp4

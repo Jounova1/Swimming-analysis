@@ -1,7 +1,13 @@
+package com.swimming.services;
+import java.util.List;
+import java.util.Optional;
+import com.swimming.models.Swimmer;
+import com.swimming.repositories.SwimmerRepository;
 
-Public SwimmerService (SwimmerRepository swimmerRepository) 
-{
-    {
+public class SwimmerService {
+    private SwimmerRepository swimmerRepository;
+
+    public SwimmerService(SwimmerRepository swimmerRepository) {
         this.swimmerRepository = swimmerRepository;
     }
 

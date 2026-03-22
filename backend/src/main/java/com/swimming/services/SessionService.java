@@ -1,12 +1,10 @@
-package com.swimming;
-import java.util.List;
+package com.swimming.services;
 
-import org.springframework.stereotype.Service;
+import java.util.List;
 
 import com.swimming.models.Session;
 import com.swimming.repositories.SessionRepository;
 
-@Service
 public class SessionService {
     private SessionRepository sessionRepository;
 
