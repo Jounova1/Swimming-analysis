@@ -3,16 +3,16 @@ import cv2
 from ultralytics import YOLO
 
 # --- Config ---
-MODEL_PATH   = r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_clean\weights\last.pt"
-VIDEO_SOURCE = "flip_turn.mp4"   # or 0 for Pi camera live feed
-CONF         = 0.45              # confidence threshold
+MODEL_PATH   = r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_finetune_v2\weights\last.pt"
+VIDEO_SOURCE = "surface_5.mp4"   # or 0 for Pi camera live feed
+CONF         = 0.25       # confidence threshold
 INPUT_WIDTH  = 640               # resize frame before inference
 INPUT_HEIGHT = 360
 SAVE_OUTPUT  = False             # set True to save result video
 
 # --------------
 
-model = YOLO(r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_clean\weights\last.pt")
+model = YOLO(r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_finetune_v2\weights\last.pt")
 cap   = cv2.VideoCapture(VIDEO_SOURCE)
 
 if not cap.isOpened():
@@ -52,7 +52,7 @@ while True:
     annotated = results[0].plot()
 
     # FIX 5: show detection info for debugging
-    num_detections = len(results[0].boxes) if results[0].boxes is not None else 0
+    num_detections = len(results[0].boxes) if results[0].boxes is not None else 0 
     if num_detections > 0:
         for box in results[0].boxes:
             conf_score = float(box.conf)
