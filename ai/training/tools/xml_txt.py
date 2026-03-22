@@ -6,7 +6,7 @@ from pathlib import Path
 # =========================================
 # CONFIG
 # =========================================
-DATA_ROOT = Path(r"D:\Swimming-analysis\ai\training\dataset\dataset")
+DATA_ROOT = Path(r"D:\Swimming-analysis\ai\training\dataset")
 
 ANNOTATIONS_DIR = DATA_ROOT / "labels"
 LABELS_DIR = DATA_ROOT / "labels"

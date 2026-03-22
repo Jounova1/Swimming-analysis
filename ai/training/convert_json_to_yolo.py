@@ -1,193 +1,315 @@
+"""
+YOLO training script with automatic JSON -> YOLO TXT conversion before training.
+
+What this script does:
+1) Ensures ultralytics is installed
+2) Converts annotations from JSON to YOLO TXT
+3) Creates labels folders automatically
+4) Starts YOLO training
+
+Supported JSON formats:
+- LabelMe-style per-image JSON:
+  {
+    "imageWidth": ...,
+    "imageHeight": ...,
+    "shapes": [{"label": "swimmer", "points": [[x1,y1],[x2,y2]]}, ...]
+  }
+
+- COCO-style JSON:
+  {
+    "images": [...],
+    "annotations": [...],
+    "categories": [...]
+  }
+"""
+
+from __future__ import annotations
+
 import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable
-
-
-SPLITS = ("Trainset", "Valset", "Testset")
-VALID_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def ensure_ultralytics() -> None:
+    """Install ultralytics if missing."""
     try:
         import ultralytics  # noqa: F401
     except ImportError:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "ultralytics"])
 
 
-def clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, v))
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
 
 
-
-def list_image_files(folder: Path) -> list[Path]:
-    return [p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in VALID_IMAGE_SUFFIXES]
-
+def clamp(value: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
+    return max(min_v, min(max_v, value))
 
 
-def yolo_line_from_vertices(vertices: Iterable[float]) -> str | None:
-    vals = list(vertices)
-    if len(vals) != 4:
-        return None
+def bbox_to_yolo(img_w: float, img_h: float, x: float, y: float, w: float, h: float):
+    """Convert top-left bbox to YOLO normalized bbox."""
+    x_center = (x + w / 2.0) / img_w
+    y_center = (y + h / 2.0) / img_h
+    w_norm = w / img_w
+    h_norm = h / img_h
 
-    x1, y1, x2, y2 = [float(v) for v in vals]
-    x_min, x_max = sorted((x1, x2))
-    y_min, y_max = sorted((y1, y2))
-
-    width = x_max - x_min
-    height = y_max - y_min
-    if width <= 0 or height <= 0:
-        return None
-
-    x_center = (x_min + x_max) / 2.0
-    y_center = (y_min + y_max) / 2.0
-
-    x_center = clamp(x_center)
-    y_center = clamp(y_center)
-    width = clamp(width)
-    height = clamp(height)
-
-    if width <= 0 or height <= 0:
-        return None
-
-    return f"0 {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}"
+    return (
+        clamp(x_center),
+        clamp(y_center),
+        clamp(w_norm),
+        clamp(h_norm),
+    )
 
 
-
-def convert_one_json(json_path: Path, txt_path: Path) -> tuple[bool, int, str | None]:
-    """Return (success, number_of_boxes_written, error_message)."""
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        return False, 0, f"read/json error: {e}"
-
-    annotations = data.get("annotations", [])
-    if not isinstance(annotations, list):
-        return False, 0, "annotations field is not a list"
-
-    lines: list[str] = []
-
-    for ann in annotations:
-        if not isinstance(ann, dict):
-            continue
-
-        category = str(ann.get("category", "")).strip().lower()
-        if category != "swimmer":
-            continue
-
-        geometry = ann.get("geometry", {})
-        if not isinstance(geometry, dict):
-            continue
-
-        if str(geometry.get("type", ann.get("type", "rectangle"))).lower() not in {"rectangle", "bbox", "box"}:
-            # Keep going if type is unusual but vertices still exist.
-            pass
-
-        vertices = geometry.get("vertices")
-        if vertices is None:
-            continue
-
-        line = yolo_line_from_vertices(vertices)
-        if line is not None:
-            lines.append(line)
-
-    txt_path.parent.mkdir(parents=True, exist_ok=True)
+def write_yolo_txt(txt_path: Path, lines: list[str]) -> None:
+    ensure_dir(txt_path.parent)
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
-    return True, len(lines), None
+
+def convert_labelme_json(json_path: Path, txt_path: Path, class_map: dict[str, int]) -> bool:
+    """Convert one LabelMe-style JSON file into one YOLO txt file."""
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not all(k in data for k in ("imageWidth", "imageHeight", "shapes")):
+        return False
+
+    img_w = float(data["imageWidth"])
+    img_h = float(data["imageHeight"])
+    lines: list[str] = []
+
+    for shape in data.get("shapes", []):
+        label = str(shape.get("label", "")).strip()
+        if label not in class_map:
+            continue
+
+        points = shape.get("points", [])
+        if len(points) < 2:
+            continue
+
+        xs = [float(p[0]) for p in points]
+        ys = [float(p[1]) for p in points]
+
+        x_min = min(xs)
+        y_min = min(ys)
+        x_max = max(xs)
+        y_max = max(ys)
+
+        bw = x_max - x_min
+        bh = y_max - y_min
+
+        if bw <= 0 or bh <= 0:
+            continue
+
+        x_c, y_c, w_n, h_n = bbox_to_yolo(img_w, img_h, x_min, y_min, bw, bh)
+        lines.append(f"{class_map[label]} {x_c:.6f} {y_c:.6f} {w_n:.6f} {h_n:.6f}")
+
+    write_yolo_txt(txt_path, lines)
+    return True
 
 
+def convert_coco_json(json_path: Path, output_labels_dir: Path, class_map: dict[str, int]) -> bool:
+    """Convert one COCO-style JSON file into many YOLO txt files."""
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
 
-def clear_yolo_cache(labels_root: Path) -> None:
-    removed = 0
-    for cache_file in labels_root.rglob("*.cache"):
-        try:
-            cache_file.unlink()
-            removed += 1
-        except OSError:
-            pass
-    print(f"[INFO] Removed {removed} old cache file(s).")
+    if not all(k in data for k in ("images", "annotations")):
+        return False
+
+    images = {img["id"]: img for img in data.get("images", [])}
+    categories = {cat["id"]: cat["name"] for cat in data.get("categories", [])}
+
+    image_lines: dict[str, list[str]] = {}
+
+    for ann in data.get("annotations", []):
+        image_id = ann.get("image_id")
+        category_id = ann.get("category_id")
+        bbox = ann.get("bbox")
+
+        if image_id not in images or not bbox or len(bbox) != 4:
+            continue
+
+        cat_name = categories.get(category_id, "swimmer")
+        if cat_name not in class_map:
+            continue
+
+        img = images[image_id]
+        img_w = float(img["width"])
+        img_h = float(img["height"])
+        file_name = Path(img["file_name"]).stem + ".txt"
+
+        x, y, w, h = map(float, bbox)
+        if w <= 0 or h <= 0:
+            continue
+
+        x_c, y_c, w_n, h_n = bbox_to_yolo(img_w, img_h, x, y, w, h)
+        line = f"{class_map[cat_name]} {x_c:.6f} {y_c:.6f} {w_n:.6f} {h_n:.6f}"
+
+        image_lines.setdefault(file_name, []).append(line)
+
+    ensure_dir(output_labels_dir)
+    for txt_name, lines in image_lines.items():
+        write_yolo_txt(output_labels_dir / txt_name, lines)
+
+    return True
 
 
-
-def convert_json_to_labels(dataset_root: Path) -> dict[str, dict[str, int]]:
+def convert_json_annotations(
+    dataset_root: Path,
+    class_map: dict[str, int],
+    split_names: tuple[str, ...] = ("Trainset", "Valset", "Testset"),
+) -> None:
+    """
+    Convert JSON annotations under:
+      dataset_root / annotations / <split>
+    into:
+      dataset_root / labels / <split>
+    """
     annotations_root = dataset_root / "annotations"
     labels_root = dataset_root / "labels"
-    images_root = dataset_root / "images"
-
-    summary: dict[str, dict[str, int]] = {}
-
-    clear_yolo_cache(labels_root)
 
     print("\n[INFO] Starting JSON -> YOLO TXT conversion...")
-    for split in SPLITS:
+
+    for split in split_names:
         ann_dir = annotations_root / split
         label_dir = labels_root / split
-        image_dir = images_root / split
-        label_dir.mkdir(parents=True, exist_ok=True)
-
-        split_stats = {
-            "json_files": 0,
-            "txt_files": 0,
-            "labeled_files": 0,
-            "boxes": 0,
-            "errors": 0,
-            "images": 0,
-        }
-
-        if image_dir.exists():
-            split_stats["images"] = len(list_image_files(image_dir))
+        ensure_dir(label_dir)
 
         if not ann_dir.exists():
-            print(f"[WARN] Missing annotations folder: {ann_dir}")
-            summary[split] = split_stats
+            print(f"[WARN] Annotation folder not found, skipping: {ann_dir}")
             continue
 
         json_files = sorted(ann_dir.glob("*.json"))
-        split_stats["json_files"] = len(json_files)
-        print(f"\n[INFO] {split}: found {len(json_files)} JSON file(s)")
+        print(f"[INFO] {split}: found {len(json_files)} JSON file(s) in {ann_dir}")
 
         for json_file in json_files:
-            txt_file = label_dir / f"{json_file.stem}.txt"
-            ok, n_boxes, err = convert_one_json(json_file, txt_file)
-            if not ok:
-                split_stats["errors"] += 1
-                print(f"[ERROR] {json_file.name}: {err}")
-                continue
+            # Try LabelMe-style first
+            txt_path = label_dir / f"{json_file.stem}.txt"
+            converted = False
 
-            split_stats["txt_files"] += 1
-            split_stats["boxes"] += n_boxes
-            if n_boxes > 0:
-                split_stats["labeled_files"] += 1
+            try:
+                converted = convert_labelme_json(json_file, txt_path, class_map)
+                if converted:
+                    continue
+            except Exception as e:
+                print(f"[WARN] LabelMe parse failed for {json_file.name}: {e}")
 
-        summary[split] = split_stats
-        print(
-            f"[INFO] {split} done | images={split_stats['images']} json={split_stats['json_files']} "
-            f"txt={split_stats['txt_files']} labeled_txt={split_stats['labeled_files']} boxes={split_stats['boxes']} "
-            f"errors={split_stats['errors']}"
-        )
+            # Try COCO-style
+            try:
+                converted = convert_coco_json(json_file, label_dir, class_map)
+                if converted:
+                    continue
+            except Exception as e:
+                print(f"[WARN] COCO parse failed for {json_file.name}: {e}")
 
-    total_boxes = sum(v["boxes"] for v in summary.values())
-    total_labeled = sum(v["labeled_files"] for v in summary.values())
-    print(f"\n[INFO] Conversion finished | labeled files={total_labeled}, total boxes={total_boxes}\n")
-    return summary
+            print(f"[ERROR] Unsupported or failed JSON format: {json_file}")
 
+    print("[INFO] Conversion finished.\n")
 
 
-def validate_labels(summary: dict[str, dict[str, int]]) -> None:
-    train_boxes = summary.get("Trainset", {}).get("boxes", 0)
-    val_boxes = summary.get("Valset", {}).get("boxes", 0)
-    train_labeled = summary.get("Trainset", {}).get("labeled_files", 0)
-    val_labeled = summary.get("Valset", {}).get("labeled_files", 0)
+def main() -> None:
+    ensure_ultralytics()
+    from ultralytics import YOLO
 
-    if train_boxes <= 0 or train_labeled <= 0:
-        raise RuntimeError(
-            "No valid training labels were created. Check your JSON format and the conversion logic before training."
-        )
-    if val_boxes <= 0 or val_labeled <= 0:
-        raise RuntimeError(
-            "No valid validation labels were created. Check your JSON format and the conversion logic before training."
-        )
+    # =============================
+    # PATHS
+    # =============================
+    # غيّر المسار ده حسب مشروعك
+    dataset_root = Path(r"C:\Swimming-analysis\ai\training\data")
+
+    # لو dataset.yaml عندك في مكان تاني، عدله هنا
+    data_yaml = r"C:\Swimming-analysis\ai\training\dataset_1.yaml"
+
+    # =============================
+    # CLASSES
+    # =============================
+    # لو اسم الكلاس في JSON مختلف، زوده هنا
+    class_map = {
+        "swimmer": 0,
+        "Swimmer": 0,
+    }
+
+    # =============================
+    # AUTO CONVERT JSON -> TXT
+    # =============================
+    convert_json_annotations(dataset_root=dataset_root, class_map=class_map)
+
+    # =============================
+    # MODEL
+    # =============================
+    model_weights = "yolo11m.pt"
+    model = YOLO(model_weights)
+
+    # =============================
+    # TRAINING SETTINGS
+    # مناسب أكثر لـ ~2000 صورة + RTX 3070
+    # =============================
+    results = model.train(
+        # Data
+        data=data_yaml,
+        imgsz=640,
+        epochs=150,
+        batch=8,                  # جرّب 12 بعدين لو VRAM مستحملة
+        project="runs/train",
+        name="yolo11m_swimmer_2000imgs",
+        exist_ok=True,
+
+        # Optimization
+        optimizer="AdamW",
+        lr0=0.0015,
+        lrf=0.01,
+        cos_lr=True,
+        momentum=0.90,
+        weight_decay=0.0005,
+        warmup_epochs=3.0,
+        warmup_momentum=0.80,
+        warmup_bias_lr=0.05,
+
+        # Regularization / stability
+        patience=30,
+        freeze=0,
+        close_mosaic=15,
+        label_smoothing=0.0,
+
+        # Augmentation
+        hsv_h=0.015,
+        hsv_s=0.50,
+        hsv_v=0.35,
+        degrees=5.0,
+        translate=0.10,
+        scale=0.35,
+        shear=1.0,
+        perspective=0.0003,
+        fliplr=0.50,
+        flipud=0.0,
+        mosaic=0.50,
+        mixup=0.05,
+        copy_paste=0.0,
+        erasing=0.15,
+
+        # Runtime
+        device=0,
+        workers=4,
+        cache=False,
+        amp=True,
+        seed=42,
+        deterministic=False,
+
+        # Validation / logs
+        val=True,
+        save=True,
+        save_period=10,
+        plots=True,
+        verbose=True,
+    )
+
+    print("Training complete.")
+    print("Best checkpoint:", model.trainer.best)
+    print("Results saved under:", model.trainer.save_dir)
+    print("Metrics object:", results)
+
+
+if __name__ == "__main__":
+    main()

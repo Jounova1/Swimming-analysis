@@ -17,8 +17,8 @@ def main() -> None:
     from ultralytics import YOLO
 
     # paths
-    data_yaml = r"D:\Swimming-analysis\ai\training\dataset_1.yaml"
-    pretrained_run = r"D:\Swimming-analysis\runs\train\yolo11m_swimmer_clean\weights\best.pt"
+    data_yaml = r"C:\Swimming-analysis\ai\training\dataset_1.yaml"
+    pretrained_run = r"C:\Swimming-analysis\ai\training\runs\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
 
     # load previous best model
     model = YOLO(pretrained_run)
@@ -28,8 +28,8 @@ def main() -> None:
         data=data_yaml,
         imgsz=640,
         epochs=40,                 # 30–50 مناسب غالبًا
-        batch=8,
-        project=r"D:\Swimming-analysis\runs\train",
+        batch=4,
+        project=r"C:\Swimming-analysis\ai\training\runs\runs\train",
         name="yolo11m_swimmer_finetune_v2",
         exist_ok=True,
 

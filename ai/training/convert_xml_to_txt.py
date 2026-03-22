@@ -1,166 +1,164 @@
 from __future__ import annotations
 
-import argparse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# =========================================
+# CONFIG
+# =========================================
+DATA_ROOT = Path(r"C:\clean-repo\ai\training\dataset")
 
-def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, value))
+ANNOTATIONS_DIR = DATA_ROOT / "labels"
+LABELS_DIR = DATA_ROOT / "labels"
+
+SPLITS = ["train", "val", "test"]
+
+CLASS_MAP = {
+    "swimmer": 0,
+    "Swimmer": 0,
+}
+
+# =========================================
+# HELPERS
+# =========================================
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
 
 
-def parse_object_to_yolo_line(obj: ET.Element, img_w: int, img_h: int, class_id: int) -> str | None:
-    bndbox = obj.find("bndbox")
-    if bndbox is None:
+def clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, v))
+
+
+def voc_to_yolo(size_w: float, size_h: float, xmin: float, ymin: float, xmax: float, ymax: float):
+    # safety ترتيب
+    x_min, x_max = sorted([xmin, xmax])
+    y_min, y_max = sorted([ymin, ymax])
+
+    bw = x_max - x_min
+    bh = y_max - y_min
+    if bw <= 0 or bh <= 0 or size_w <= 0 or size_h <= 0:
         return None
 
-    try:
-        xmin = float(bndbox.findtext("xmin", default=""))
-        ymin = float(bndbox.findtext("ymin", default=""))
-        xmax = float(bndbox.findtext("xmax", default=""))
-        ymax = float(bndbox.findtext("ymax", default=""))
-    except ValueError:
-        return None
+    x_center = (x_min + x_max) / 2.0 / size_w
+    y_center = (y_min + y_max) / 2.0 / size_h
+    w = bw / size_w
+    h = bh / size_h
 
-    x_min, x_max = sorted((xmin, xmax))
-    y_min, y_max = sorted((ymin, ymax))
-
-    box_w = x_max - x_min
-    box_h = y_max - y_min
-    if box_w <= 0 or box_h <= 0:
-        return None
-
-    x_center = ((x_min + x_max) / 2.0) / img_w
-    y_center = ((y_min + y_max) / 2.0) / img_h
-    norm_w = box_w / img_w
-    norm_h = box_h / img_h
-
-    x_center = clamp(x_center)
-    y_center = clamp(y_center)
-    norm_w = clamp(norm_w)
-    norm_h = clamp(norm_h)
-
-    if norm_w <= 0 or norm_h <= 0:
-        return None
-
-    return f"{class_id} {x_center:.6f} {y_center:.6f} {norm_w:.6f} {norm_h:.6f}"
+    return (
+        clamp(x_center),
+        clamp(y_center),
+        clamp(w),
+        clamp(h),
+    )
 
 
-def convert_xml_file(xml_path: Path, out_txt_path: Path, target_class: str = "swimmer", class_id: int = 0) -> tuple[bool, int, str | None]:
-    try:
-        root = ET.parse(xml_path).getroot()
-    except ET.ParseError as exc:
-        return False, 0, f"XML parse error: {exc}"
-    except OSError as exc:
-        return False, 0, f"File error: {exc}"
+def convert_xml_file(xml_path: Path, txt_path: Path) -> tuple[int, int]:
+    """
+    Converts one Pascal VOC XML file to one YOLO TXT file.
+    Returns:
+        objects_found, objects_written
+    """
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
 
-    size_node = root.find("size")
-    if size_node is None:
-        return False, 0, "Missing <size> tag"
+    size = root.find("size")
+    if size is None:
+        raise ValueError("Missing <size> in XML")
 
-    try:
-        img_w = int(size_node.findtext("width", default=""))
-        img_h = int(size_node.findtext("height", default=""))
-    except ValueError:
-        return False, 0, "Invalid image width/height"
+    width = float(size.findtext("width", default="0"))
+    height = float(size.findtext("height", default="0"))
+    if width <= 0 or height <= 0:
+        raise ValueError("Invalid image size in XML")
 
-    if img_w <= 0 or img_h <= 0:
-        return False, 0, "Image width/height must be positive"
+    lines = []
+    objects_found = 0
+    objects_written = 0
 
-    lines: list[str] = []
     for obj in root.findall("object"):
-        name = (obj.findtext("name", default="") or "").strip().lower()
-        if name != target_class.lower():
+        objects_found += 1
+
+        name = obj.findtext("name", default="").strip()
+        if name not in CLASS_MAP:
             continue
 
-        line = parse_object_to_yolo_line(obj, img_w, img_h, class_id)
-        if line is not None:
-            lines.append(line)
+        bndbox = obj.find("bndbox")
+        if bndbox is None:
+            continue
 
-    out_txt_path.parent.mkdir(parents=True, exist_ok=True)
-    out_txt_path.write_text("\n".join(lines), encoding="utf-8")
+        xmin = float(bndbox.findtext("xmin", default="0"))
+        ymin = float(bndbox.findtext("ymin", default="0"))
+        xmax = float(bndbox.findtext("xmax", default="0"))
+        ymax = float(bndbox.findtext("ymax", default="0"))
 
-    return True, len(lines), None
+        converted = voc_to_yolo(width, height, xmin, ymin, xmax, ymax)
+        if converted is None:
+            continue
 
+        xc, yc, w, h = converted
+        class_id = CLASS_MAP[name]
+        lines.append(f"{class_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
+        objects_written += 1
 
-def convert_path(input_path: Path, output_dir: Path | None, target_class: str, class_id: int, recursive: bool) -> None:
-    if input_path.is_file():
-        xml_files = [input_path]
-    else:
-        pattern = "**/*.xml" if recursive else "*.xml"
-        xml_files = sorted(input_path.glob(pattern))
+    ensure_dir(txt_path.parent)
+    txt_path.write_text("\n".join(lines), encoding="utf-8")
 
-    if not xml_files:
-        print(f"[WARN] No XML files found in: {input_path}")
-        return
-
-    ok_count = 0
-    error_count = 0
-    total_boxes = 0
-
-    for xml_file in xml_files:
-        if output_dir is None:
-            out_txt = xml_file.with_suffix(".txt")
-        else:
-            if input_path.is_file():
-                rel = Path(xml_file.name)
-            else:
-                rel = xml_file.relative_to(input_path)
-            out_txt = (output_dir / rel).with_suffix(".txt")
-
-        ok, box_count, err = convert_xml_file(
-            xml_path=xml_file,
-            out_txt_path=out_txt,
-            target_class=target_class,
-            class_id=class_id,
-        )
-
-        if ok:
-            ok_count += 1
-            total_boxes += box_count
-            print(f"[OK] {xml_file} -> {out_txt} | boxes={box_count}")
-        else:
-            error_count += 1
-            print(f"[ERROR] {xml_file}: {err}")
-
-    print(
-        f"\n[INFO] Done. converted={ok_count}, errors={error_count}, total_boxes={total_boxes}, files_scanned={len(xml_files)}"
-    )
+    return objects_found, objects_written
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Convert Pascal VOC XML annotations to YOLO TXT labels.")
-    parser.add_argument("input", type=Path, help="XML file or directory containing XML files")
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=None,
-        help="Optional output directory. If omitted, TXT files are written next to XML files.",
-    )
-    parser.add_argument("--class-name", type=str, default="swimmer", help="Object class name to export")
-    parser.add_argument("--class-id", type=int, default=0, help="YOLO class id for class-name")
-    parser.add_argument(
-        "--recursive",
-        action="store_true",
-        help="Recursively search for XML files when input is a directory",
-    )
-    return parser
+def remove_cache_files() -> None:
+    for p in LABELS_DIR.rglob("*.cache"):
+        try:
+            p.unlink()
+            print(f"[INFO] Removed cache: {p}")
+        except Exception as e:
+            print(f"[WARN] Could not remove cache {p}: {e}")
 
 
+# =========================================
+# MAIN
+# =========================================
 def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+    total_xml = 0
+    total_written_txt = 0
+    total_found_objects = 0
+    total_written_objects = 0
+    total_failed = 0
 
-    if not args.input.exists():
-        raise SystemExit(f"Input path does not exist: {args.input}")
+    print("Starting XML -> YOLO TXT conversion...\n")
 
-    convert_path(
-        input_path=args.input,
-        output_dir=args.output_dir,
-        target_class=args.class_name,
-        class_id=args.class_id,
-        recursive=args.recursive,
-    )
+    for split in SPLITS:
+        ann_dir = ANNOTATIONS_DIR / split
+        lbl_dir = LABELS_DIR / split
+        ensure_dir(lbl_dir)
+
+        if not ann_dir.exists():
+            print(f"[WARN] Missing folder: {ann_dir}")
+            continue
+
+        xml_files = sorted(ann_dir.glob("*.xml"))
+        print(f"{split}: found {len(xml_files)} XML files")
+
+        for xml_file in xml_files:
+            total_xml += 1
+            txt_file = lbl_dir / f"{xml_file.stem}.txt"
+
+            try:
+                found_objs, written_objs = convert_xml_file(xml_file, txt_file)
+                total_found_objects += found_objs
+                total_written_objects += written_objs
+                total_written_txt += 1
+            except Exception as e:
+                total_failed += 1
+                print(f"[ERROR] {xml_file.name}: {e}")
+
+    remove_cache_files()
+
+    print("\nDone.")
+    print(f"XML files found: {total_xml}")
+    print(f"TXT files created: {total_written_txt}")
+    print(f"Objects found in XML: {total_found_objects}")
+    print(f"Objects written to TXT: {total_written_objects}")
+    print(f"Failed files: {total_failed}")
 
 
 if __name__ == "__main__":
