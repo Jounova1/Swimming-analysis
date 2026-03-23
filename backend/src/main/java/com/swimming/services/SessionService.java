@@ -30,18 +30,26 @@ public class SessionService {
     }
 
     public Session createSession(Long swimmerId, Session session) {
-        // Validate swimmer exists before creating session.
         Swimmer swimmer = swimmerRepository.findById(swimmerId)
                 .orElseThrow(() -> new RuntimeException("Swimmer not found"));
 
-        if (swimmer == null) {
-            throw new RuntimeException("Swimmer not found");
-        }
-
+        // If Session has a swimmer field, you may want session.setSwimmer(swimmer);
         return sessionRepository.save(session);
+    }
+
+    public Session createSession(Session session) {
+        return sessionRepository.save(session);
+    }
+
+    public Session updateSession(Long id, Session sessionDetails) {
+        if (!sessionRepository.existsById(id)) {
+            throw new RuntimeException("Session not found");
+        }
+        sessionDetails.setId(id);
+        return sessionRepository.save(sessionDetails);
     }
 
     public void deleteSession(Long id) {
         sessionRepository.deleteById(id);
     }
-}
+

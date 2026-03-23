@@ -14,6 +14,7 @@ private String name;
 private String age;
 private String phone_num;
 private String team;
+<<<<<<< HEAD
 
 public Long getId() {
     return id;
@@ -57,4 +58,31 @@ public void setTeam(String team) {
 
 
 
+=======
+private String gender ;
+public Object getGender() {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'getGender'");
+}
+public void setGender(Object gender2) {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'setGender'");
+}
+public Object getAge() {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'getAge'");
+}
+public Object getName() {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'getName'");
+}
+public void setAge(Object age2) {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'setAge'");
+}
+public void setName(Object name2) {
+    // TODO Auto-generated method stub
+    throw new UnsupportedOperationException("Unimplemented method 'setName'");
+}
+>>>>>>> 25d448ca2a57475841eb07f34c87fca9cb1020d1
 }
