@@ -1,9 +1,5 @@
 package com.swimming.services;
 
-<<<<<<< HEAD
-public class VideoService {
-
-=======
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -35,5 +31,4 @@ public class VideoService {
     public void deleteVideo(Long id) {
         videoRepository.deleteById(id);
     }
->>>>>>> 746d4a46a164173f06d1e85d80b3f9565be05583
 }
