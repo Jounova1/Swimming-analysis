@@ -3,9 +3,9 @@ import cv2
 from ultralytics import YOLO
 
 # --- Config ---
-MODEL_PATH   = r"C:\Swimming-analysis\Swimming-analysis\ai\training\runs\train\exp_a_adamw_less_aug\weights\best.pt"
-VIDEO_SOURCE = r"C:\Swimming-analysis\Swimming-analysis\ai\training\videoplayback (1).mp4"   # or 0 for Pi camera live feed
-CONF         = 0.35       # confidence threshold
+MODEL_PATH   = r"C:\Swimming-analysis\Swimming-analysis\ai\training\best.pt"
+VIDEO_SOURCE = r"C:\Swimming-analysis\Swimming-analysis\ai\training\videoplayback.mp4"   # or 0 for Pi camera live feed
+CONF         = 0.65 # confidence threshold
 INPUT_WIDTH  = 640              # resize frame before inference
 INPUT_HEIGHT = 360
 SAVE_OUTPUT  = False             # set True to save result video
