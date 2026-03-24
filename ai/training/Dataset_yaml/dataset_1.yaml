@@ -1,6 +1,0 @@
-path: D:\Swimming-analysis\ai\training\dataset
-train: images/train
-val: images/val
-
-names:
-  0: swimmer

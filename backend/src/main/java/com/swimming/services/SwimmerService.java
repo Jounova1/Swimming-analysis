@@ -16,15 +16,15 @@ public class SwimmerService {
         this.swimmerRepository = swimmerRepository;
     }
 
-    public List<Swimmer> getAllSwimmers() {
+    public List<Swimmer> getAll() {
         return swimmerRepository.findAll();
     }
 
     public Swimmer getSwimmerById(Long id) {
-        return swimmerRepository.findById(id).orElse(null);
+        return swimmerRepository.findById(id).orElseThrow(() -> new RuntimeException("Swimmer not found"));
     }
 
-    public Swimmer createSwimmer(Swimmer swimmer) {
+    public Swimmer CreateSwimmer(Swimmer swimmer) {
         return swimmerRepository.save(swimmer);
     }
 
@@ -39,7 +39,7 @@ public class SwimmerService {
         swimmerRepository.deleteById(id);
     }
 
-    public void saveSwimmer(Swimmer swimmer) {
-        swimmerRepository.save(swimmer);
+    public Swimmer saveSwimmer(Swimmer swimmer) {
+      return  swimmerRepository.save(swimmer);
     }
 }

@@ -6,4 +6,5 @@ import com.swimming.models.Swimmer;
 
 public interface SwimmerRepository extends JpaRepository <Swimmer,Long>
 {
+
 }

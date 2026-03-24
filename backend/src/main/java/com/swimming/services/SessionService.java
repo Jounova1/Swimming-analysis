@@ -30,7 +30,7 @@ public class SessionService {
     }
 
     public Session createSession(Long swimmerId, Session session) {
-        Swimmer swimmer = swimmerRepository.findById(swimmerId)
+        swimmerRepository.findById(swimmerId)
                 .orElseThrow(() -> new RuntimeException("Swimmer not found"));
 
         // If Session has a swimmer field, you may want session.setSwimmer(swimmer);
@@ -52,4 +52,6 @@ public class SessionService {
     public void deleteSession(Long id) {
         sessionRepository.deleteById(id);
     }
+
+}
 

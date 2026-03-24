@@ -1,5 +1,5 @@
 package com.swimming.controllers;
-
+import com.swimming.dto.AnalysisRequest;
 import com.swimming.models.StrokeMetric;
 import com.swimming.services.AnalysisService;
 import org.springframework.web.bind.annotation.*;

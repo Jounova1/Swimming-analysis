@@ -1,9 +1,9 @@
 import cv2 
 
-img = cv2.imread("surface_3_00001.jpg")
+img = cv2.imread(r"C:\Swimming-analysis\ai\training\Swimmer Detection.v1i.yolov11\train\images\Booker-Start-Breast-11_01_2024-08_36_20_5_Edited_swimmer_detected_frame_000004_PNG.rf.50943088d00ec0fc1a4fb588baa412a2.jpg")
 h, w, _ = img.shape # get image dimensions for converting YOLO format to pixel coordinates
 
-with open("surface_3_00001.xmlpy visua") as f:
+with open(r"C:\Swimming-analysis\ai\training\Swimmer Detection.v1i.yolov11\train\labels\Booker-Start-Breast-11_01_2024-08_36_20_5_Edited_swimmer_detected_frame_000004_PNG.rf.50943088d00ec0fc1a4fb588baa412a2.txt") as f:
     for line in f:
         c, x, y, bw, bh = map(float, line.split()) # read class and bounding box coordinates from YOLO format (class, x_center, y_center, width, height)
         
