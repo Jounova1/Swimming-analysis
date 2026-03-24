@@ -95,7 +95,7 @@ def main() -> None:
         # 💾 OUTPUT
         # ======================
         project=r"C:\Swimming-analysis\ai\training\runs",  # مكان حفظ النتائج
-        name="yolo11m_swimmer_augmented_v4",               # اسم التجربة
+        name="yolo11m_swimmer_augmented_v5",               # اسم التجربة
 
         val=True,            # يعمل validation أثناء التدريب
         save=True,           # يحفظ الموديل

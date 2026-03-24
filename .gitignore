@@ -4,3 +4,5 @@ dataset
 frames
 *mp4
 runs
+*.zip
+*.rar
