@@ -17,10 +17,10 @@ def main() -> None:
     from ultralytics import YOLO  # استيراد الموديل
 
     # 📁 مسار ملف الداتا (فيه paths + classes)
-    data_yaml = r"C:\Swimming-analysis\ai\training\dataset_1.yaml"
+    data_yaml = r"C:\Swimming-analysis\ai\training\dataset.yaml"
 
     # 📁 موديل قديم هتعمل عليه fine-tune
-    pretrained_run = r"C:\Swimming-analysis\ai\training\runs\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
+    pretrained_run = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
 
     # تحميل الموديل القديم
     model = YOLO(pretrained_run)
@@ -95,7 +95,7 @@ def main() -> None:
         # 💾 OUTPUT
         # ======================
         project=r"C:\Swimming-analysis\ai\training\runs",  # مكان حفظ النتائج
-        name="yolo11m_swimmer_augmented_v1",               # اسم التجربة
+        name="yolo11m_swimmer_augmented_v4",               # اسم التجربة
 
         val=True,            # يعمل validation أثناء التدريب
         save=True,           # يحفظ الموديل
