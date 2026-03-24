@@ -17,10 +17,10 @@ def main() -> None:
     from ultralytics import YOLO  # استيراد الموديل
 
     # 📁 مسار ملف الداتا (فيه paths + classes)
-    data_yaml = r"C:\Swimming-analysis\ai\training\dataset.yaml"
+    data_yaml = r"C:\Swimming-analysis\Swimming-analysis\ai\training\dataset.yaml"
 
     # 📁 موديل قديم هتعمل عليه fine-tune
-    pretrained_run = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
+    pretrained_run = r"C:\Swimming-analysis\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
 
     # تحميل الموديل القديم
     model = YOLO(pretrained_run)
@@ -30,7 +30,7 @@ def main() -> None:
 
         data=data_yaml,       # مكان الداتا
         imgsz=640,           # حجم الصور (توازن بين السرعة والدقة)
-        epochs=50,           # عدد epochs (مرات التعلم)
+        epochs=80,           # عدد epochs (مرات التعلم)
         batch=8,             # عدد الصور في كل batch (حسب قوة GPU)
         device=0,            # استخدام كارت الشاشة
 
@@ -38,7 +38,7 @@ def main() -> None:
         # ⚙️ OPTIMIZER
         # ======================
         optimizer="SGD",     # طريقة تحديث الأوزان (ثابتة وموثوقة)
-        lr0=0.005,           # learning rate (سرعة التعلم)
+        lr0=0.003,           # learning rate (سرعة التعلم)
         momentum=0.937,      # يساعد في تثبيت التحديثات
         weight_decay=0.0005, # يقلل overfitting
 
@@ -46,28 +46,28 @@ def main() -> None:
         # 📉 LEARNING SCHEDULE
         # ======================
         cos_lr=True,         # learning rate يقل تدريجيًا (أفضل convergence)
-        warmup_epochs=2,     # يبدأ ببطء في الأول لتفادي instability
+        warmup_epochs=3,     # يبدأ ببطء في الأول لتفادي instability
 
         # ======================
         # 🛡️ REGULARIZATION
         # ======================
-        patience=15,         # يقف لو مفيش تحسن بعد 15 epoch
-        close_mosaic=10,     # يقفل mosaic في آخر epochs لتحسين الدقة
+        patience=25,         # يقف لو مفيش تحسن بعد 15 epoch
+        close_mosaic=15,     # يقفل mosaic في آخر epochs لتحسين الدقة
 
         # ======================
         # 🎨 AUGMENTATION
         # ======================
 
         # 🌈 تغيير الألوان والإضاءة
-        hsv_h=0.02,          # تغيير بسيط في اللون (hue)
+        hsv_h=0.015,          # تغيير بسيط في اللون (hue)
         hsv_s=0.5,           # تغيير في saturation (مهم للمياه)
-        hsv_v=0.4,           # 🔥 brightness variation (مهم جدًا)
+        hsv_v=0.35,           # 🔥 brightness variation (مهم جدًا)
 
         # 🔄 حركة وتحويلات
-        degrees=5.0,         # دوران بسيط للصورة
-        translate=0.1,       # تحريك الصورة (simulate camera shift)
-        scale=0.4,           # zoom in/out (مهم جدًا للـ distance)
-        shear=1.0,           # ميل بسيط (زاوية)
+        degrees=3.0,         # دوران بسيط للصورة
+        translate=0.01,       # تحريك الصورة (simulate camera shift)
+        scale=0.35,           # zoom in/out (مهم جدًا للـ distance)
+        shear=0.5,           # ميل بسيط (زاوية)
 
         # 🎥 perspective
         perspective=0.0005,  # يحاكي الكاميرا وهي مش مستقيمة
@@ -77,11 +77,11 @@ def main() -> None:
         flipud=0.0,          # ❌ متقلبش فوق/تحت (مش منطقي للسباح)
 
         # 🧩 mix augmentations
-        mosaic=0.3,          # دمج 4 صور في صورة واحدة (تنوع عالي)
-        mixup=0.1,           # دمج صورتين (يساعد مع clutter)
+        mosaic=0.25,          # دمج 4 صور في صورة واحدة (تنوع عالي)
+        mixup=0.05,           # دمج صورتين (يساعد مع clutter)
 
         # 🌊 noise / occlusion
-        erasing=0.15,        # يحذف جزء من الصورة (simulate splash/occlusion)
+        erasing=0.1,        # يحذف جزء من الصورة (simulate splash/occlusion)
 
         # ======================
         # ⚙️ SYSTEM
@@ -94,9 +94,10 @@ def main() -> None:
         # ======================
         # 💾 OUTPUT
         # ======================
-        project=r"C:\Swimming-analysis\ai\training\runs",  # مكان حفظ النتائج
-        name="yolo11m_swimmer_augmented_v5",               # اسم التجربة
-
+            project=r"C:\Swimming-analysis\Swimming-analysis\ai\training\runs\train",  # مكان حفظ النتائج
+        name="yolo11m_swimmer_augmented_v4",       
+        save_period=10,
+                # اسم التجربة"save_period": 10, 
         val=True,            # يعمل validation أثناء التدريب
         save=True,           # يحفظ الموديل
         plots=True,          # يرسم graphs (loss / mAP)
