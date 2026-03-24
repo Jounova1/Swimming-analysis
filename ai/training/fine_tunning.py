@@ -17,23 +17,23 @@ def main() -> None:
     from ultralytics import YOLO
 
     # paths
-    data_yaml = r"C:\Swimming-analysis\ai\training\dataset_1.yaml"
-    pretrained_run = r"C:\Swimming-analysis\ai\training\runs\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
+    data_yaml = r"C:\Swimming-analysis\Swimming-analysis\ai\training\dataset_1.yaml"
+    pretrained_run = r"C:\Swimming-analysis\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
 
-    # load previous best model
+    
     model = YOLO(pretrained_run)
 
-    # fine-tune
+  
     results = model.train(
         data=data_yaml,
         imgsz=640,
-        epochs=40,                 # 30–50 مناسب غالبًا
+        epochs=40,                
         batch=4,
         project=r"C:\Swimming-analysis\ai\training\runs\runs\train",
         name="yolo11m_swimmer_finetune_v2",
         exist_ok=True,
 
-        optimizer="SGD",           # fine-tuning final polish
+        optimizer="SGD",          
         lr0=0.005,
         lrf=0.01,
         cos_lr=True,

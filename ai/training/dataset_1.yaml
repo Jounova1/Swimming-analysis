@@ -1,4 +1,4 @@
-path: C:\Swimming-analysis\ai\training\dataset
+path: C:\Swimming-analysis\Swimming-analysis\ai\dataset
 train: images/train
 val: images/val
 test: images/test

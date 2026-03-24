@@ -17,10 +17,10 @@ def main() -> None:
     from ultralytics import YOLO
 
     # paths
-    data_yaml = r"D:\Swimming-analysis\ai\training\dataset.yaml" # path to your dataset.yaml file
+    data_yaml = r"c:\Swimming-analysis\Swimming-analysis\ai\training\Dataset_yaml\dataset.yaml" # path to your dataset.yaml file
 
     # model
-    model = YOLO("yolo11m.pt") # here you can change the base model, e.g. to "last.pt" or "best.pt"
+    model = YOLO("yolov8n.pt") # here you can change the base model, e.g. to "last.pt" or "best.pt"
 
     # train
     results = model.train(
@@ -28,7 +28,7 @@ def main() -> None:
         imgsz=640,# resize images to 640x640 for training, adjust if needed
         epochs=150,# number of training epochs, adjust based on your dataset size and convergence
         batch=8,# adjust based on your GPU memory, e.g. 16 or 32 for larger GPUs, or 4 for smaller ones
-        project=r"D:\Swimming-analysis\runs\train", # path where training runs will be saved
+        project=r"c:\Swimming-analysis\Swimming-analysis\ai\training\runs\train", # path where training runs will be saved
         name="yolo11m_swimmer_clean", #here you can change the name of the training run folder
         exist_ok=True,
 
