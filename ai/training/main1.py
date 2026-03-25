@@ -1,13 +1,51 @@
 import time
-import cv2
-from ultralytics import YOLO
+from collections import deque
+import importlib
+import importlib.util
+import subprocess
+import sys
 from detection_smoother import DetectionSmoother
-import numpy as np
+
+
+def _load_yolo_class():
+    """
+    Dynamically load ultralytics.YOLO.
+
+    This avoids static import resolution errors in editors when the current
+    interpreter environment doesn't yet have ultralytics installed.
+    """
+    if importlib.util.find_spec("ultralytics") is None:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "ultralytics"]
+        )
+
+    ultra = importlib.import_module("ultralytics")
+    return ultra.YOLO
+
+
+YOLO = _load_yolo_class()
+
+
+def _load_cv2():
+    """
+    Dynamically load OpenCV (cv2).
+
+    Prevents editor/static-analysis "unresolved import" warnings when cv2
+    isn't installed for the currently analyzed interpreter.
+    """
+    if importlib.util.find_spec("cv2") is None:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "opencv-python"]
+        )
+    return importlib.import_module("cv2")
+
+
+cv2 = _load_cv2()
 
 # --- Config ---
 MODEL_PATH   = r"C:\Swimming-analysis\Swimming-analysis\ai\training\best (1).pt"
 VIDEO_SOURCE = r"C:\Swimming-analysis\Swimming-analysis\ai\training\videoplayback (1).mp4"   # or 0 for Pi camera live feed
-CONF         = 0.10             # confidence threshold (lowered to 0.10 to capture more detections)
+CONF         = 0.5             # confidence threshold (accept down to 20%)
 INPUT_WIDTH  = 640              # resize frame before inference
 INPUT_HEIGHT = 360
 SAVE_OUTPUT  = False             # set True to save result video
@@ -16,15 +54,15 @@ SAVE_OUTPUT  = False             # set True to save result video
 MIN_CONSECUTIVE_FRAMES = 3  # Y=3: require detection in 3 consecutive frames to accept
 STOP_FRAMES_THRESHOLD  = 10 # X=10: stop timer after 10 frames without detection
 
-# --- User Input for Pool Length ---
+# --- Distance / Pool length (NO interactive input) ---
+# Default pool length (edit this constant if needed).
+pool_length = 50.0
+
 print("=" * 60)
 print("SWIMMER ANALYSIS SYSTEM")
 print("=" * 60)
-pool_length = float(input("Enter pool length in meters: "))
 print(f"Pool length set to: {pool_length}m")
 print("=" * 60 + "\n")
-
-# --------------
 
 model = YOLO(MODEL_PATH)
 cap   = cv2.VideoCapture(VIDEO_SOURCE)
@@ -38,22 +76,30 @@ if fps == 0 or fps < 1:
 # Note: max_age_frames=3 means tracks are forgotten after 3 frames of not being detected
 smoother = DetectionSmoother(
     min_consecutive_frames=MIN_CONSECUTIVE_FRAMES,
-    max_age_frames=3  # REDUCED from default 5 to 3 for faster timeout
+    confidence_window_frames=5,
+    confidence_accept_threshold=0.20,
+    max_lost_frames=10,  # keep tracking while missing <= 10 frames
 )
 
 # ========== EXPLICIT TIMER STATE MANAGEMENT ==========
-# Timer states: "idle", "swimming", "paused"
-timer_state = "idle"  # idle -> swimming -> paused -> idle/swimming
+# Spec:
+# idle -> swimming (timer running)
+# swimming -> stopped (after 10 consecutive missing frames; freeze display)
+# stopped -> lost (after >10 consecutive missing frames)
+# lost -> swimming (reset to 0 only when re-detected after lost)
+timer_state = "idle"
 swim_start_frame = None
-swim_end_frame = None
 frames_without_detection = 0
-swim_duration = 0.0
+swim_duration = 0.0  # frozen elapsed time when timer is stopped
 
 # ========== STROKE COUNTER ==========
 stroke_count = 0
-last_center_y = None  # Track vertical position for stroke detection
-stroke_threshold = 20  # pixels of movement to detect a stroke
-frames_since_last_stroke = 0
+stroke_threshold = 20  # Minimum up/down amplitude (bbox center Y) to treat as a stroke
+MIN_FRAMES_BETWEEN_STROKES = 15
+y_hist = deque(maxlen=5)  # rolling buffer of bbox center Y for extrema detection
+seen_trough_since_last_stroke = False
+trough_y = None
+last_stroke_frame = -10_000_000
 
 # ========== DISTANCE TRACKER ==========
 distance_traveled = 0.0  # in meters
@@ -61,6 +107,12 @@ laps_completed = 0
 last_center_x = None  # Track horizontal position for lap detection
 lap_threshold = INPUT_WIDTH * 0.3  # Threshold for detecting crossing (30% of frame width)
 in_left_zone = None  # Track which end of pool swimmer is in
+
+# Lap crossing boundaries (use hysteresis to avoid double-counting).
+mid_x = INPUT_WIDTH / 2.0
+lap_margin_px = int(INPUT_WIDTH * 0.05)
+left_boundary = mid_x - lap_margin_px
+right_boundary = mid_x + lap_margin_px
 
 frame_count = 0
 
@@ -77,75 +129,49 @@ if SAVE_OUTPUT:
 
 print("Running inference — press ESC to quit\n")
 
-# ========== HELPER: Draw Semi-Transparent Stats Box ==========
-def draw_stats_overlay(frame, timer_display, stroke_count, distance_traveled, position="top-left"):
+# ========== HELPER: Draw Clean Top-Right Overlay ==========
+def draw_stats_overlay(frame, time_s: float, strokes: int, distance_m: float) -> None:
     """
-    Draw a clean, semi-transparent stats box on the frame.
-    
-    Args:
-        frame: The image to draw on
-        timer_display: Time string (e.g., "6.17s")
-        stroke_count: Number of strokes
-        distance_traveled: Distance in meters
-        position: "top-left" or "top-right"
+    Required overlay (TOP-RIGHT), EXACT 3 lines, NO emojis:
+      Time:     0.00s
+      Strokes:  0
+      Distance: 0.0m
     """
-    # Prepare text lines
     lines = [
-        f"⏱ Time:     {timer_display}",
-        f"🏊 Strokes:  {stroke_count}",
-        f"📏 Distance: {distance_traveled:.1f}m"
+        f"Time:     {time_s:.2f}s",
+        f"Strokes:  {strokes:d}",
+        f"Distance: {distance_m:.1f}m",
     ]
-    
+
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.65
     font_thickness = 1
-    line_spacing = 28
-    box_padding = 12
-    
-    # Calculate box dimensions
-    text_width = 0
-    for line in lines:
-        (w, h) = cv2.getTextSize(line, font, font_scale, font_thickness)[0]
-        text_width = max(text_width, w)
-    
-    box_width = text_width + box_padding * 2
-    box_height = len(lines) * line_spacing + box_padding * 2
-    
-    # Position box
-    if position == "top-right":
-        x_start = frame.shape[1] - box_width - 15
-    else:  # top-left
-        x_start = 15
-    y_start = 15
-    
-    # Draw semi-transparent black background
+    line_spacing = 24
+    pad = 12
+
+    text_sizes = [cv2.getTextSize(line, font, font_scale, font_thickness)[0] for line in lines]
+    box_w = int(max(w for (w, _) in text_sizes) + pad * 2)
+    box_h = int(len(lines) * line_spacing + pad * 2 - 6)
+
+    x0 = int(frame.shape[1] - box_w - 15)
+    y0 = 15
+
     overlay = frame.copy()
-    cv2.rectangle(overlay, (x_start, y_start), 
-                  (x_start + box_width, y_start + box_height), 
-                  (0, 0, 0), -1)  # Black fill
-    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-    
-    # Draw border
-    cv2.rectangle(frame, (x_start, y_start), 
-                  (x_start + box_width, y_start + box_height), 
-                  (200, 200, 200), 2)  # Light gray border
-    
-    # Draw text lines
+    cv2.rectangle(overlay, (x0, y0), (x0 + box_w, y0 + box_h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.60, frame, 0.40, 0, frame)
+    cv2.rectangle(frame, (x0, y0), (x0 + box_w, y0 + box_h), (0, 0, 0), 1)
+
     for i, line in enumerate(lines):
-        y_text = y_start + box_padding + (i + 1) * line_spacing - 8
-        
-        # Draw black outline for better readability
-        for dx in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                if dx != 0 or dy != 0:
-                    cv2.putText(frame, line, (x_start + box_padding + dx, y_text + dy),
-                                font, font_scale, (0, 0, 0), font_thickness + 1)
-        
-        # Draw white text
-        cv2.putText(frame, line, (x_start + box_padding, y_text),
-                    font, font_scale, (255, 255, 255), font_thickness)
-    
-    return frame
+        y_text = int(y0 + pad + (i + 1) * line_spacing - 8)
+        x_text = x0 + pad
+
+        # Thin black outline
+        cv2.putText(frame, line, (x_text - 1, y_text), font, font_scale, (0, 0, 0), font_thickness + 1)
+        cv2.putText(frame, line, (x_text + 1, y_text), font, font_scale, (0, 0, 0), font_thickness + 1)
+        cv2.putText(frame, line, (x_text, y_text - 1), font, font_scale, (0, 0, 0), font_thickness + 1)
+        cv2.putText(frame, line, (x_text, y_text + 1), font, font_scale, (0, 0, 0), font_thickness + 1)
+
+        cv2.putText(frame, line, (x_text, y_text), font, font_scale, (255, 255, 255), font_thickness)
 
 while True:
     t_start = time.time()
@@ -175,9 +201,23 @@ while True:
     boxes_to_add = results[0].boxes if results[0].boxes is not None else []
     smoother.add_detections(boxes_to_add, frame_count)
     
-    # Get only detections that passed temporal consistency filter
+    # Temporal smoothing + prediction (up to N missing frames).
+    # We must distinguish real detections from predicted ones:
+    # - predicted => is_interpolated=True (no real detector hit this frame)
     smoothed_dets = smoother.get_smoothed_detections()
-    has_detection = len(smoothed_dets) > 0
+    best_det = None
+    detected_now = False
+    if len(smoothed_dets) > 0:
+        real_dets = [d for d in smoothed_dets if not d[3]]
+        if len(real_dets) > 0:
+            best_det = max(real_dets, key=lambda d: d[1])
+            detected_now = True
+        else:
+            best_det = max(smoothed_dets, key=lambda d: d[1])
+            detected_now = False
+
+    # For the timer logic, "detection present" means REAL detection this frame.
+    has_detection = detected_now
     
     # Calculate detection counts for display
     num_raw_detections = len(results[0].boxes) if results[0].boxes is not None else 0
@@ -185,120 +225,141 @@ while True:
     
     # DEBUG: Show smoother state
     stats = smoother.get_stats()
-    if num_raw_detections == 0 or has_detection == False:  # Show when no detections
-        print(f"[FRAME {frame_count}] Smoother state: active_tracks={stats['active_tracks']}, "
-              f"pending={stats['pending_tracks']}, inactive={stats['inactive_tracks']}, "
-              f"has_detection={has_detection}")
+    if num_raw_detections == 0 or has_detection == False:  # Show when no real detections
+        print(
+            f"[FRAME {frame_count}] Smoother: active_tracks={stats.get('active_tracks')} "
+            f"tracks_total={stats.get('tracks_total')} has_detection={has_detection}"
+        )
     
     # ========== EXPLICIT TIMER STATE MACHINE ==========
-    # Three states: idle (waiting for first detection), swimming (active), paused (stopped)
-    
-    if has_detection:
-        # Swimmer detected in this frame
-        if timer_state == "idle":
-            # NEW SWIM STARTING
+    if timer_state == "idle":
+        if has_detection:
             timer_state = "swimming"
             swim_start_frame = frame_count
-            swim_end_frame = None
             frames_without_detection = 0
             swim_duration = 0.0
+
+            # Reset per-spec stats when swimmer first appears.
+            stroke_count = 0
+            laps_completed = 0
+            distance_traveled = 0.0
+            last_center_x = None  # prev center_x for lap crossing
+            y_hist.clear()
+            seen_trough_since_last_stroke = False
+            trough_y = None
+            last_stroke_frame = -10_000_000
+            in_left_zone = None
+
             print(f"[TIMER] ✓ Swim STARTED (frame {frame_count})")
-        
-        elif timer_state == "paused":
-            # RESUMING AFTER PAUSE (NEW SWIM SESSION)
+
+    elif timer_state == "swimming":
+        if has_detection:
+            frames_without_detection = 0
+        else:
+            frames_without_detection += 1
+            if frames_without_detection >= STOP_FRAMES_THRESHOLD:
+                # Stop timer after 10 consecutive missing frames.
+                swim_duration = (frame_count - swim_start_frame) / fps
+                timer_state = "stopped"
+
+                print(
+                    f"[TIMER] ✗ Swim STOPPED (elapsed: {swim_duration:.2f}s, frames: {frame_count - swim_start_frame})"
+                )
+                print(
+                    f"[SUMMARY] Final Stats: Time={swim_duration:.2f}s | Strokes={stroke_count} | Distance={distance_traveled:.1f}m | Laps={laps_completed}"
+                )
+
+    elif timer_state == "stopped":
+        # Displayed time freezes in this state.
+        if has_detection:
+            frames_without_detection = 0
+        else:
+            frames_without_detection += 1
+            if frames_without_detection > STOP_FRAMES_THRESHOLD:
+                timer_state = "lost"
+
+    elif timer_state == "lost":
+        # Timer resets to 0 ONLY after being lost and re-detected.
+        if has_detection:
             timer_state = "swimming"
             swim_start_frame = frame_count
-            swim_end_frame = None
             frames_without_detection = 0
-            swim_duration = 0.0  # RESET to 0!
+            swim_duration = 0.0
+
+            stroke_count = 0
+            laps_completed = 0
+            distance_traveled = 0.0
+            last_center_x = None  # prev center_x for lap crossing
+            y_hist.clear()
+            seen_trough_since_last_stroke = False
+            trough_y = None
+            last_stroke_frame = -10_000_000
+            in_left_zone = None
+
             print(f"[TIMER] ⟳ Swim RESET and restarted (frame {frame_count})")
-        
-        else:  # timer_state == "swimming"
-            # Continue swimming, reset no-detection counter
-            frames_without_detection = 0
     
-    else:
-        # No swimmer detected in this frame
-        if timer_state == "swimming":
-            # Start counting frames without detection
-            frames_without_detection += 1
-            print(f"  No detection for {frames_without_detection} frames (threshold: {STOP_FRAMES_THRESHOLD})")
-            
-            if frames_without_detection >= STOP_FRAMES_THRESHOLD:
-                # STOP THE TIMER
-                timer_state = "paused"
-                swim_end_frame = frame_count - STOP_FRAMES_THRESHOLD
-                swim_duration = (swim_end_frame - swim_start_frame) / fps
-                print(f"[TIMER] ✗ Swim STOPPED (elapsed: {swim_duration:.2f}s, frames: {swim_end_frame - swim_start_frame})")
-                print(f"[SUMMARY] Final Stats: Time={swim_duration:.2f}s | Strokes={stroke_count} | Distance={distance_traveled:.2f}m | Laps={laps_completed}")
-    
-    # ========== STROKE DETECTION ==========
-    # Detect strokes by monitoring vertical (Y) movement of swimmer's bounding box
-    if has_detection and timer_state == "swimming":
-        for track_id, conf, xyxy, is_interpolated in smoothed_dets:
-            x1, y1, x2, y2 = xyxy
-            center_x = (x1 + x2) / 2
-            center_y = (y1 + y2) / 2
-            
-            # Detect vertical movement (stroke indication)
-            if last_center_y is not None:
-                y_movement = abs(center_y - last_center_y)
-                # Always increment debounce counter (tracks time since last stroke)
-                frames_since_last_stroke += 1
-                # Count stroke when: (1) significant movement AND (2) debounce interval passed
-                if y_movement > stroke_threshold and frames_since_last_stroke >= 15:  # At least 15 frames between strokes
+    # ========== STROKE + LAP DETECTION (ONLY DURING ACTIVE SWIMMING) ==========
+    if timer_state == "swimming" and has_detection and best_det is not None:
+        _track_id, _conf, xyxy, _is_pred = best_det
+        x1, y1, x2, y2 = xyxy
+        center_x = (x1 + x2) / 2.0
+        center_y = (y1 + y2) / 2.0
+
+        # ---- Stroke counting (up/down cycle = trough -> peak) ----
+        y_hist.append(center_y)
+        if len(y_hist) >= 3:
+            y_a = y_hist[-3]
+            y_b = y_hist[-2]
+            y_c = y_hist[-1]
+
+            is_local_min = (y_b < y_a) and (y_b < y_c)
+            is_local_max = (y_b > y_a) and (y_b > y_c)
+
+            if is_local_min:
+                trough_y = y_b
+                seen_trough_since_last_stroke = True
+
+            if (
+                is_local_max
+                and seen_trough_since_last_stroke
+                and trough_y is not None
+            ):
+                amplitude = abs(y_b - trough_y)
+                enough_amp = amplitude >= stroke_threshold
+                enough_time = (frame_count - last_stroke_frame) >= MIN_FRAMES_BETWEEN_STROKES
+                if enough_amp and enough_time:
                     stroke_count += 1
-                    frames_since_last_stroke = 0
+                    last_stroke_frame = frame_count
+                    seen_trough_since_last_stroke = False
                     print(f"  [STROKE] Stroke #{stroke_count} detected")
-            else:
-                frames_since_last_stroke = 0
-            
-            # ========== LAP/DISTANCE DETECTION ==========
-            # Detect when swimmer crosses from one end to the other
-            if last_center_x is not None:
-                # Determine which zone swimmer is in (left or right)
-                if center_x < INPUT_WIDTH * 0.4:  # Left zone
-                    current_zone = "left"
-                elif center_x > INPUT_WIDTH * 0.6:  # Right zone
-                    current_zone = "right"
-                else:
-                    current_zone = None
-                
-                # Detect crossing (change zones)
-                if current_zone and in_left_zone and current_zone != in_left_zone:
-                    laps_completed += 1
-                    distance_traveled = laps_completed * pool_length
-                    print(f"  [LAP] Lap #{laps_completed} completed! Distance: {distance_traveled:.2f}m")
-                
-                if current_zone:
-                    in_left_zone = current_zone
-            else:
-                # Initialize zone tracking
-                if center_x < INPUT_WIDTH * 0.4:
-                    in_left_zone = "left"
-                elif center_x > INPUT_WIDTH * 0.6:
-                    in_left_zone = "right"
-            
-            last_center_y = center_y
+
+        # ---- Lap detection (cross from left side to right side) ----
+        if last_center_x is None:
             last_center_x = center_x
-    
-    # Reset position tracking when not swimming
-    if not has_detection or timer_state != "swimming":
-        last_center_y = None
+        else:
+            if last_center_x < left_boundary and center_x > right_boundary:
+                laps_completed += 1
+                distance_traveled = laps_completed * pool_length
+                print(
+                    f"  [LAP] Lap #{laps_completed} completed! Distance: {distance_traveled:.1f}m"
+                )
+            elif last_center_x > right_boundary and center_x < left_boundary:
+                laps_completed += 1
+                distance_traveled = laps_completed * pool_length
+                print(
+                    f"  [LAP] Lap #{laps_completed} completed! Distance: {distance_traveled:.1f}m"
+                )
+
+            last_center_x = center_x
+
+    # When not actively swimming, clear motion buffers (prevents carry-over noise).
+    if timer_state != "swimming":
+        y_hist.clear()
         last_center_x = None
-        frames_since_last_stroke = 0
+        seen_trough_since_last_stroke = False
+        trough_y = None
     
-    # Calculate current elapsed time based on timer state
-    if timer_state == "swimming":
-        current_elapsed = (frame_count - swim_start_frame) / fps
-        timer_display = f"Swimming: {current_elapsed:.2f}s"
-        timer_color = (0, 255, 0)  # Green
-    elif timer_state == "paused":
-        timer_display = f"Stopped: {swim_duration:.2f}s"
-        timer_color = (0, 165, 255)  # Orange
-    else:  # idle
-        timer_display = "Ready: 0.00s"
-        timer_color = (0, 0, 255)  # Red
+    # Timer display is rendered via the spec-required overlay later.
     
     # Draw detections on frame (from smoothed detections)
     annotated = frame.copy()
@@ -345,17 +406,15 @@ while True:
     cv2.putText(annotated, f"Smoothed: {num_smoothed_detections}", (10, 90),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
     
-    # ===== CLEAN STATS OVERLAY =====
-    # Extract just the time value for display
+    # ===== CLEAN STATS OVERLAY (spec-required) =====
     if timer_state == "swimming":
-        time_value = f"{(frame_count - swim_start_frame) / fps:.2f}s"
-    elif timer_state == "paused":
-        time_value = f"{swim_duration:.2f}s"
-    else:  # idle
-        time_value = "0.00s"
-    
-    # Draw the stats box overlay
-    annotated = draw_stats_overlay(annotated, time_value, stroke_count, distance_traveled, position="top-left")
+        display_time_s = (frame_count - swim_start_frame) / fps
+    elif timer_state in ("stopped", "lost"):
+        display_time_s = swim_duration
+    else:
+        display_time_s = 0.0
+
+    draw_stats_overlay(annotated, display_time_s, stroke_count, distance_traveled)
 
     if writer:
         writer.write(annotated)

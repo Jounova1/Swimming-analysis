@@ -1,197 +1,333 @@
-"""
-Detection Smoother: Applies temporal filtering and interpolation to swimmer detections.
-
-Fixes two issues:
-1. Low-confidence detections: Only accepts detections that appear consistently over Y frames
-2. Missing frames: Interpolates swimmer position when briefly lost (1-3 frames)
-
-FIXED: Properly ages out detections that haven't been seen for N frames, so old swimmers don't persist.
-"""
-
-from collections import defaultdict, deque
-from typing import List, Tuple, Optional
+import cv2
+import mediapipe as mp
 import numpy as np
+import time
+import matplotlib.pyplot as plt
 
 
-class DetectionSmoother:
-    """
-    Applies temporal smoothing to swimmer detections.
-    
-    Args:
-        min_consecutive_frames: Minimum consecutive frames a detection must appear 
-                                to be accepted (Y=3)
-        interpolate_gap_frames: Maximum gap to interpolate across (1-3 frames)
-        max_age_frames: Maximum frames a track can be inactive before being forgotten (default: 5)
-    """
-    
-    def __init__(self, min_consecutive_frames: int = 3, interpolate_gap_frames: int = 3, max_age_frames: int = 5):
-        self.min_frames = min_consecutive_frames
-        self.interpolate_gap = interpolate_gap_frames
-        self.max_age_frames = max_age_frames  # NEW: Forget tracks after this many frames without detection
-        
-        # Track detection history: track_id -> deque of (frame_idx, box_data)
-        self.detection_history = defaultdict(lambda: deque(maxlen=10))
-        
-        # Track ages: how many consecutive frames each swimmer has been detected
-        self.track_ages = defaultdict(int)
-        
-        # Track inactivity: how many consecutive frames since last detection
-        self.track_inactive_frames = defaultdict(int)
-        
-        # Last seen frame index for each track
-        self.last_seen_frame = {}
-        
-        # Current frame index
-        self.current_frame = 0
-    
-    def add_detections(self, boxes_list: List, frame_idx: int) -> None:
-        """
-        Add detections from current frame to the smoother's history.
-        
-        Args:
-            boxes_list: List of detection boxes from YOLO
-                        Each box should have: .id, .conf, .xyxy (or .xywh)
-            frame_idx: Current frame index
-        """
-        self.current_frame = frame_idx
-        detected_ids = set()
-        
-        # Record all detections for this frame
-        for box in boxes_list:
-            track_id = int(box.id) if box.id is not None else -1
-            conf = float(box.conf)
-            xyxy = box.xyxy[0].cpu().numpy() if hasattr(box.xyxy, 'cpu') else box.xyxy[0]
-            
-            # Store detection
-            box_data = {
-                'track_id': track_id,
-                'conf': conf,
-                'xyxy': tuple(xyxy.tolist()),  # (x1, y1, x2, y2)
-            }
-            
-            self.detection_history[track_id].append((frame_idx, box_data))
-            detected_ids.add(track_id)
-            
-            # Update track age (consecutive frames detected)
-            if track_id in self.track_ages:
-                self.track_ages[track_id] += 1
+class SwimmingDetector:
+    def __init__(self):
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_pose = mp.solutions.pose
+
+        self.pose = self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+        self.results = None
+        self.landmarks = None
+
+        # Swimming Style
+        self.style = "Unknown"
+
+        # Angles variables
+        self.left_angles = []
+        self.right_angles = []
+
+        # Stroke counter variables
+        self.ready = False
+        self.left_stroke = 0
+        self.right_stroke = 0
+        self.l_stage = 'up'
+        self.r_stage = 'up'
+
+        # Timer variable
+        self.start_time = None
+        self.elapsed_time = 0
+
+    def get_strokes(self):
+        strokes = self.left_stroke + self.right_stroke
+
+        if self.style == "Freestyle" or self.style == "Backstroke":
+            return strokes
+
+        return max(self.left_stroke, self.right_stroke)
+
+    def get_style(self):
+        return self.style
+
+    def get_elapsed_time(self):
+        self.elapsed_time = time.time() - self.start_time
+        return self.elapsed_time
+
+    def get_result(self):
+        return self.results
+
+    def calculate_angle(self, image, a, b, c):
+        a = np.array(a)  # First
+        b = np.array(b)  # Mid
+        c = np.array(c)  # End
+
+        radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+        angle = np.abs(radians * 180.0 / np.pi)
+
+        if angle > 180.0:
+            angle = 360 - angle
+
+        # Visualize angle
+        cv2.putText(image, str(int(angle)),
+                    tuple(np.multiply(b, [640, 480]).astype(int)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (191, 64, 191), 2, cv2.LINE_AA
+                    )
+
+        return angle
+
+    def get_landmark_value(self, part):
+        # Get landmark of specified body part
+        landmark_index = self.mp_pose.PoseLandmark[part].value
+
+        if self.landmarks is None:
+            return None
+
+        return self.landmarks[landmark_index]
+
+    def get_orientation(self):
+        left_shoulder = self.get_landmark_value("LEFT_SHOULDER")
+        right_shoulder = self.get_landmark_value("RIGHT_SHOULDER")
+        left_hip = self.get_landmark_value("LEFT_HIP")
+        right_hip = self.get_landmark_value("RIGHT_HIP")
+
+        # Calculate the vectors between shoulders and hips
+        shoulder_vector_x = right_shoulder.x - left_shoulder.x
+        shoulder_vector_y = right_shoulder.y - left_shoulder.y
+        hip_vector_x = right_hip.x - left_hip.x
+        hip_vector_y = right_hip.y - left_hip.y
+
+        # Calculate the dot product of shoulder and hip vectors
+        dot_product = shoulder_vector_x * hip_vector_x + shoulder_vector_y * hip_vector_y
+
+        # TODO: Fixing dot product bugs since most swimming do not stand straight
+
+        # Determine the facing direction based on the dot product sign
+        if shoulder_vector_x < 0:
+            return "Forward"
+        else:
+            return "Backward"
+
+    def set_ready(self):
+        self.ready = True
+        self.start_time = time.time()
+
+    def process_frame(self, frame):
+        # Recolor image to RGB
+        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image.flags.writeable = False
+
+        # Make detection
+        self.results = self.pose.process(image)
+
+        # Recolor back to BGR
+        image.flags.writeable = True
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        # Extract landmarks
+        try:
+            self.landmarks = self.results.pose_landmarks.landmark
+
+            # Get orientation (forward or backward)
+            orientation = self.get_orientation()
+
+            # Get left arm coordinates
+            left_hip = [self.get_landmark_value("LEFT_HIP").x, self.get_landmark_value("LEFT_HIP").y]
+            left_shoulder = [self.get_landmark_value("LEFT_SHOULDER").x, self.get_landmark_value("LEFT_SHOULDER").y]
+            left_elbow = [self.get_landmark_value("LEFT_ELBOW").x, self.get_landmark_value("LEFT_ELBOW").y]
+            left_wrist = [self.get_landmark_value("LEFT_WRIST").x, self.get_landmark_value("LEFT_WRIST").y]
+
+            # Get right arm coordinates
+            right_hip = [self.get_landmark_value("RIGHT_HIP").x, self.get_landmark_value("RIGHT_HIP").y]
+            right_shoulder = [self.get_landmark_value("RIGHT_SHOULDER").x, self.get_landmark_value("RIGHT_SHOULDER").y]
+            right_elbow = [self.get_landmark_value("RIGHT_ELBOW").x, self.get_landmark_value("RIGHT_ELBOW").y]
+            right_wrist = [self.get_landmark_value("RIGHT_WRIST").x, self.get_landmark_value("RIGHT_WRIST").y]
+
+            # Calculate angles
+            left_shoulder_angle = self.calculate_angle(image, left_hip, left_shoulder, left_elbow)
+            right_shoulder_angle = self.calculate_angle(image, right_hip, right_shoulder, right_elbow)
+
+            left_elbow_angle = self.calculate_angle(image, left_shoulder, left_elbow, left_wrist)
+            right_elbow_angle = self.calculate_angle(image, right_shoulder, right_elbow, right_wrist)
+
+            # Store angles in a list for plotting
+            if self.ready:
+                self.left_angles.append(left_shoulder_angle)
+                self.right_angles.append(right_shoulder_angle)
+
+            # Percentage of success of stroke
+            left_per = np.interp(left_shoulder_angle, (30, 160), (0, 100))
+            right_per = np.interp(right_shoulder_angle, (30, 160), (0, 100))
+
+            # Bar to show stroke progress
+            left_bar = np.interp(left_shoulder_angle, (30, 160), (380, 50))
+            right_bar = np.interp(right_shoulder_angle, (30, 160), (380, 50))
+
+            # Check to ensure right form before starting the program
+            if left_shoulder_angle > 160 and right_shoulder_angle > 160 and not self.ready:
+                self.set_ready()
+
+            if self.ready:
+                # Stroke counter logic
+                if left_shoulder_angle < 40 and self.l_stage == 'half-down':
+                    # Swimming style logic
+                    if self.style == "Unknown":
+                        if right_shoulder_angle < 70 and left_elbow_angle > 160:
+                            self.style = "Butterfly"
+                        elif right_shoulder_angle < 70:
+                            self.style = "Breaststroke"
+                        elif orientation == "Backward":
+                            self.style = "Freestyle"
+                        else:
+                            self.style = "Backstroke"
+
+                    self.l_stage = "down"
+
+                elif 40 <= left_shoulder_angle <= 160 and self.l_stage == 'down':
+                    self.l_stage = "half-up"
+
+                elif 40 <= left_shoulder_angle <= 160 and self.l_stage == 'up':
+                    self.l_stage = "half-down"
+
+                elif left_shoulder_angle > 160 and self.l_stage == 'half-up':
+                    self.l_stage = "up"
+                    self.left_stroke += 1
+                    print(f'{self.left_stroke} (Left)')
+
+                if right_shoulder_angle < 40 and self.r_stage == 'half-down':
+                    # Swimming style logic
+                    if self.style == "Unknown":
+                        if left_shoulder_angle < 70 and right_elbow_angle > 160:
+                            self.style = "Butterfly"
+                        elif left_shoulder_angle < 70:
+                            self.style = "Breaststroke"
+                        elif orientation == "Backward":
+                            self.style = "Freestyle"
+                        else:
+                            self.style = "Backstroke"
+
+                    self.r_stage = "down"
+                    print(self.r_stage)
+
+
+                elif 40 <= right_shoulder_angle <= 160 and self.r_stage == 'down':
+                    self.r_stage = "half-up"
+                    print(self.r_stage)
+
+                elif 40 <= right_shoulder_angle <= 160 and self.r_stage == 'up':
+                    self.r_stage = "half-down"
+                    print(self.r_stage)
+
+                elif right_shoulder_angle > 160 and self.r_stage == 'half-up':
+                    self.r_stage = "up"
+                    print(self.r_stage)
+                    self.right_stroke += 1
+                    print(f'{self.right_stroke} (Right)')
+
+                # cv2.rectangle(image, (480, 50), (500, 380), (255, 0, 0), 3)
+                # cv2.rectangle(image, (480, int(left_bar)), (500, 380), (255, 0, 0), cv2.FILLED)
+                # # cv2.putText(image, f'{int(left_per)}%', (465, 430), cv2.FONT_HERSHEY_PLAIN, 2,
+                # #             (255, 0, 0), 2)
+                # cv2.putText(image, self.l_stage, (465, 430), cv2.FONT_HERSHEY_PLAIN, 2,
+                #             (255, 0, 0), 2)
+                #
+                # cv2.rectangle(image, (580, 50), (600, 380), (0, 102, 255), 3)
+                # cv2.rectangle(image, (580, int(right_bar)), (600, 380), (0, 102, 255), cv2.FILLED)
+                # # cv2.putText(image, f'{int(right_per)}%', (565, 430), cv2.FONT_HERSHEY_PLAIN, 2,
+                # #             (255, 0, 0), 2)
+                # cv2.putText(image, self.r_stage, (465, 430), cv2.FONT_HERSHEY_PLAIN, 2,
+                #             (255, 0, 0), 2)
+
+        except Exception as e:
+            pass
+            # print(f"Error: {e}")
+
+        # Render detections
+        self.mp_drawing.draw_landmarks(image, self.results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS,
+                                       self.mp_drawing.DrawingSpec(color=(102, 255, 255), thickness=2,
+                                                                   circle_radius=2),
+                                       self.mp_drawing.DrawingSpec(color=(240, 207, 137), thickness=2,
+                                                                   circle_radius=2)
+                                       )
+
+        if self.ready:
+            # Render stroke counter
+            # Setup status box
+            cv2.rectangle(image, (0, 0), (225, 100), (45, 45, 45), -1)
+
+            # Stroke data
+            cv2.putText(image, f'Stroke: {self.get_strokes()}', (10, 30),
+                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Style data
+            cv2.putText(image, str(self.style), (10, 70),
+                        cv2.FONT_HERSHEY_PLAIN, 2, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Show Timer
+            cv2.rectangle(image, (0, 420), (120, 480), (0, 255, 0), -1)
+            cv2.putText(image, f'{self.get_elapsed_time():.2f}', (10, 460), cv2.FONT_HERSHEY_PLAIN,
+                        2, (255, 0, 0), 3)
+
+        return image
+
+    def plot_angles(self):
+        # Plot the angles
+        plt.figure(figsize=(8, 6))
+        plt.plot(self.left_angles, label='Left Arm Angles')
+        plt.plot(self.right_angles, label='Right Arm Angles')
+        plt.xlabel('Frame Number')
+        plt.ylabel('Angle (degrees)')
+        plt.title('Angles of Left and Right Arms')
+        plt.legend()
+        plt.grid(True)
+
+        return plt
+
+    def count_strokes(self, src=0, w_cam=640, h_cam=480, test=False):
+        # VIDEO FEED
+        print("???")
+        cap = cv2.VideoCapture(src)
+        cap.set(3, w_cam)
+        cap.set(4, h_cam)
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+
+            frame = self.process_frame(frame)
+
+            if test:
+                cv2.imshow('Stroke Counter', frame)
             else:
-                self.track_ages[track_id] = 1
-            
-            # Reset inactivity counter (track was just detected)
-            self.track_inactive_frames[track_id] = 0
-            self.last_seen_frame[track_id] = frame_idx
-        
-        # Age out undetected tracks
-        for track_id in list(self.track_ages.keys()):
-            if track_id not in detected_ids:
-                # Track not detected this frame - increment inactivity counter
-                self.track_inactive_frames[track_id] += 1
-                
-                # If track has been inactive for too long, forget it completely
-                if self.track_inactive_frames[track_id] >= self.max_age_frames:
-                    # Remove this track from memory
-                    del self.track_ages[track_id]
-                    del self.track_inactive_frames[track_id]
-                    if track_id in self.last_seen_frame:
-                        del self.last_seen_frame[track_id]
-                    if track_id in self.detection_history:
-                        del self.detection_history[track_id]
-                else:
-                    # Track is inactive but not yet forgotten
-                    self.track_ages[track_id] = 0
-    
-    def get_smoothed_detections(self) -> List[Tuple]:
-        """
-        Return detections that have passed the temporal consistency filter.
-        
-        Returns:
-            List of (track_id, conf, xyxy, is_interpolated) tuples
-            where xyxy is (x1, y1, x2, y2)
-        """
-        smoothed = []
-        
-        for track_id, age in self.track_ages.items():
-            # Accept only tracks seen for at least min_frames consecutive detections
-            if age >= self.min_frames:
-                history = list(self.detection_history[track_id])
-                if history:
-                    # Use the most recent detection for this track
-                    frame_idx, box_data = history[-1]
-                    smoothed.append((
-                        track_id,
-                        box_data['conf'],
-                        box_data['xyxy'],
-                        False  # Not interpolated
-                    ))
-            elif 1 <= age < self.min_frames:
-                # Track is building up confidence but hasn't reached min_frames yet
-                # Still include it but mark as "pending" (low priority)
-                history = list(self.detection_history[track_id])
-                if history:
-                    frame_idx, box_data = history[-1]
-                    # Reduce confidence for pending tracks
-                    adjusted_conf = box_data['conf'] * (age / self.min_frames)
-                    smoothed.append((
-                        track_id,
-                        adjusted_conf,
-                        box_data['xyxy'],
-                        False
-                    ))
-        
-        return smoothed
-    
-    def interpolate_positions(self, frame_idx: int) -> List[Tuple]:
-        """
-        Fill in positions for tracks that briefly disappeared (1-3 frames).
-        Linearly interpolates position between last seen and current detection.
-        
-        Args:
-            frame_idx: Current frame index
-            
-        Returns:
-            List of interpolated (track_id, conf, xyxy, is_interpolated) tuples
-        """
-        interpolated = []
-        
-        for track_id, last_frame in list(self.last_seen_frame.items()):
-            gap = frame_idx - last_frame
-            
-            # If track disappeared for a few frames, try to interpolate
-            if 1 < gap <= self.interpolate_gap and track_id in self.detection_history:
-                history = list(self.detection_history[track_id])
-                if len(history) >= 2:
-                    # Get last two detections
-                    prev_frame, prev_data = history[-1]
-                    prev_xyxy = np.array(prev_data['xyxy'])
-                    
-                    # Check if this track reappears in current frame
-                    # (would be handled by regular detections)
-                    # This is for predicting future positions
-        
-        return interpolated
-    
+                # Convert the processed frame back to JPEG format for streaming
+                try:
+                    ret, buffer = cv2.imencode('.jpg', frame)
+                    frame = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                except Exception as e:
+                    pass
+
+            if cv2.waitKey(10) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+    def get_strokes_per_minute(self):
+        return int((self.get_strokes() / self.elapsed_time) * 60)
+
     def reset(self):
-        """Reset the smoother state."""
-        self.detection_history.clear()
-        self.track_ages.clear()
-        self.track_inactive_frames.clear()
-        self.last_seen_frame.clear()
-        self.current_frame = 0
-    
-    def get_stats(self) -> dict:
-        """
-        Get statistics about current detection smoothing.
-        
-        Returns:
-            Dict with 'active_tracks', 'pending_tracks', 'inactive_tracks'
-        """
-        active = sum(1 for age in self.track_ages.values() if age >= self.min_frames)
-        pending = sum(1 for age in self.track_ages.values() if 0 < age < self.min_frames)
-        inactive = sum(1 for age in self.track_ages.values() if age == 0)
-        
-        return {
-            'active_tracks': active,
-            'pending_tracks': pending,
-            'inactive_tracks': inactive,
-        }
+        self.results = None
+        self.landmarks = None
+
+        # Swimming Style
+        self.style = "Unknown"
+
+        # Angles variables
+        self.left_angles = []
+        self.right_angles = []
+
+        # Stroke counter variables
+        self.ready = False
+        self.left_stroke = 0
+        self.right_stroke = 0
+        self.l_stage = 'up'
+        self.r_stage = 'up'
+
+        # Timer variable
+        self.start_time = None
+        self.elapsed_time = 0

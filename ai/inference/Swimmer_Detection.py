@@ -26,6 +26,9 @@ MIN_FRAMES_BETWEEN_STROKES = 15
 
 # --------------
 
+# Distance uses laps * pool_length (NO interactive input).
+pool_length = 50.0
+
 
 def draw_stats_overlay_top_right(frame, time_s: float, strokes: int, distance_m: float) -> None:
     """
@@ -77,16 +80,6 @@ def draw_stats_overlay_top_right(frame, time_s: float, strokes: int, distance_m:
         cv2.putText(frame, line, (x_text, y_text), font, font_scale, (255, 255, 255), font_thickness)
 
 
-pool_length = None
-while pool_length is None:
-    raw = input("Enter pool length in meters: ")
-    try:
-        pool_length = float(raw)
-    except Exception:
-        pool_length = None
-
-print(f"Pool length set to: {pool_length}m")
-
 model = YOLO(MODEL_PATH)
 cap = cv2.VideoCapture(VIDEO_SOURCE)
 
@@ -127,24 +120,18 @@ strokes_count = 0
 laps_completed = 0
 distance_traveled_m = 0.0
 
-# Lap side tracking (crossing from one side of frame to the other)
+# Lap crossing tracking (center_x crossing mid-frame with hysteresis)
 mid_x = INPUT_WIDTH / 2.0
 side_margin_px = int(INPUT_WIDTH * 0.05)  # hysteresis
-prev_side = None  # "left" | "right" | None
+left_boundary = mid_x - side_margin_px
+right_boundary = mid_x + side_margin_px
+prev_center_x_real = None  # previous real detection center_x
 
 # Stroke detection buffers
-y_deque = deque(maxlen=3)  # (frame_idx, center_y)
+y_deque = deque(maxlen=5)  # rolling center_y values
 seen_trough_since_last_stroke = False
 last_trough_y = None
 last_stroke_frame = -10_000
-
-
-def side_from_center_x(center_x: float):
-    if center_x < mid_x - side_margin_px:
-        return "left"
-    if center_x > mid_x + side_margin_px:
-        return "right"
-    return None
 
 
 def xyxy_to_center(xyxy):
@@ -225,7 +212,7 @@ while True:
             strokes_count = 0
             laps_completed = 0
             distance_traveled_m = 0.0
-            prev_side = None
+            prev_center_x_real = None
 
             y_deque.clear()
             seen_trough_since_last_stroke = False
@@ -272,7 +259,7 @@ while True:
             strokes_count = 0
             laps_completed = 0
             distance_traveled_m = 0.0
-            prev_side = None
+            prev_center_x_real = None
 
             y_deque.clear()
             seen_trough_since_last_stroke = False
@@ -290,25 +277,29 @@ while True:
     # ==========================
     # Stroke + lap/distance logic (ONLY during active swimming)
     # ==========================
-    if timer_state == "swimming" and best_det is not None:
+    if timer_state == "swimming" and best_det is not None and detected_now:
         _, _, xyxy, _is_pred = best_det
         cx, cy = xyxy_to_center(xyxy)
 
-        # Stroke detection via bbox vertical oscillation periodicity.
+        # ---- Stroke detection (bbox Y oscillation; trough -> peak) ----
         y_deque.append((frame_count, cy))
-        if len(y_deque) == 3:
-            (_, y_a), (_, y_b), (_, y_c) = list(y_deque)
+        if len(y_deque) >= 3:
+            y_a = y_deque[-3][1]
+            y_b = y_deque[-2][1]
+            y_c = y_deque[-1][1]
 
             is_local_max = y_b > y_a and y_b > y_c
             is_local_min = y_b < y_a and y_b < y_c
 
-            # Alternating extremum cycle: count a stroke when we hit a local max
-            # after seeing a local min (trough) since the last counted stroke.
             if is_local_min:
                 last_trough_y = y_b
                 seen_trough_since_last_stroke = True
 
-            if is_local_max and seen_trough_since_last_stroke and last_trough_y is not None:
+            if (
+                is_local_max
+                and seen_trough_since_last_stroke
+                and last_trough_y is not None
+            ):
                 amplitude = abs(y_b - last_trough_y)
                 enough_amp = amplitude >= STROKE_AMPLITUDE_PX
                 enough_time = (frame_count - last_stroke_frame) >= MIN_FRAMES_BETWEEN_STROKES
@@ -317,20 +308,24 @@ while True:
                     last_stroke_frame = frame_count
                     seen_trough_since_last_stroke = False
 
-        # Lap detection: crossing from one side of frame to the other.
-        side = side_from_center_x(cx)
-        if side is not None:
-            if prev_side is None:
-                prev_side = side
-            elif side != prev_side:
+        # ---- Lap detection (mid-frame crossing with hysteresis) ----
+        if prev_center_x_real is None:
+            prev_center_x_real = cx
+        else:
+            if prev_center_x_real < left_boundary and cx > right_boundary:
                 laps_completed += 1
                 distance_traveled_m = laps_completed * pool_length
-                prev_side = side
+            elif prev_center_x_real > right_boundary and cx < left_boundary:
+                laps_completed += 1
+                distance_traveled_m = laps_completed * pool_length
+            prev_center_x_real = cx
 
-    # Reset per-frame stroke buffers if we have no track (optional safety).
+    # Reset buffers outside active swimming (prevents carry-over noise).
     if timer_state != "swimming":
-        # Keep display frozen; do not accumulate strokes during stopped/lost.
-        pass
+        y_deque.clear()
+        prev_center_x_real = None
+        seen_trough_since_last_stroke = False
+        last_trough_y = None
 
     # ==========================
     # Required clean overlay UI (top-right)
