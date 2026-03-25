@@ -4,144 +4,195 @@ This script is configured for an RTX 3050 target profile and uses
 carefully balanced augmentations for robust detection training.
 """
 
-from __future__ import annotations
+from __future__ import annotations  # بيسمح باستخدام type hints بشكل متقدم
 
-import argparse
-import importlib
-import subprocess
-import sys
-from pathlib import Path
+import argparse        # لاستقبال arguments من الـ command line
+import importlib       # للتحقق إن مكتبة معينة موجودة أو لا
+import subprocess      # لتشغيل أوامر النظام زي pip install
+import sys             # للوصول لـ Python interpreter الحالي
+from pathlib import Path  # للتعامل مع مسارات الملفات بشكل أذكى
 
 
 def install_ultralytics_if_missing() -> None:
-	"""Install Ultralytics automatically if missing, or upgrade to latest if present."""
-	if importlib.util.find_spec("ultralytics") is None:
-		print("ultralytics not found. Installing latest version...")
-		subprocess.check_call([sys.executable, "-m", "pip", "install", "ultralytics"])
-		print("ultralytics installed successfully.")
-		return
+    """Install Ultralytics if missing, or upgrade to latest if already present."""
 
-	# Keep package current so script uses latest Ultralytics features/fixes.
-	print("ultralytics is installed. Upgrading to latest version...")
-	subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "ultralytics"])
-	print("ultralytics upgraded successfully.")
+    if importlib.util.find_spec("ultralytics") is None:
+        # المكتبة مش موجودة → نثبتها من الصفر
+        print("ultralytics not found. Installing...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "ultralytics"])
+        print("ultralytics installed successfully.")
+        return
+
+    # المكتبة موجودة → نحدثها لآخر إصدار عشان نستفيد من أحدث الـ features والـ bug fixes
+    print("ultralytics found. Upgrading to latest version...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "ultralytics"])
+    print("ultralytics upgraded successfully.")
 
 
 def resolve_path(path_str: str, base_dir: Path) -> Path:
-	"""Resolve relative paths from the script directory for convenience."""
-	path = Path(path_str)
-	if path.is_absolute():
-		return path
-	return (base_dir / path).resolve()
+    """Resolve relative paths against the script directory for convenience."""
+    path = Path(path_str)
+    if path.is_absolute():
+        return path  # مسار كامل → مش محتاج تعديل
+    return (base_dir / path).resolve()  # مسار نسبي → نكمله من مجلد السكريبت
 
 
 def parse_args() -> argparse.Namespace:
-	"""Parse CLI arguments so switching model source is easy."""
-	parser = argparse.ArgumentParser(description="Ultralytics YOLO swimmer training")
-	parser.add_argument(
-		"--mode",
-		choices=["finetune", "scratch"],
-		default="finetune",
-		help="finetune: load best.pt, scratch: load yolo11m.pt pretrained backbone.",
-	)
-	parser.add_argument(
-		"--data",
-		default="dataset_1.yaml",
-		help="Path to dataset YAML file.",
-	)
-	return parser.parse_args()
+    """Parse CLI arguments so switching between training modes is easy."""
+
+    parser = argparse.ArgumentParser(description="Ultralytics YOLO swimmer training")
+
+    parser.add_argument(
+        "--mode",
+        choices=["finetune", "scratch"],
+        default="finetune",
+        help=(
+            "finetune: resume from best.pt (faster, higher starting mAP).\n"
+            "scratch: start from yolo11m.pt pretrained backbone."
+        ),
+    )
+
+    parser.add_argument(
+        "--data",
+        default="dataset_1.yaml",
+        help="Path to dataset YAML file (train/val/test paths + class names).",
+    )
+
+    return parser.parse_args()
 
 
 def main() -> None:
-	"""Run YOLO training with RTX 3050-friendly defaults."""
-	args = parse_args()
-	install_ultralytics_if_missing()
+    """Main entry point: configure and launch YOLO training."""
 
-	# Import only after optional installation succeeds.
-	from ultralytics import YOLO  # pylint: disable=import-outside-toplevel
+    args = parse_args()
+    install_ultralytics_if_missing()
 
-	script_dir = Path(__file__).resolve().parent
+    # نستورد YOLO بس بعد ما نتأكد إن المكتبة اتثبتت
+    from ultralytics import YOLO  # pylint: disable=import-outside-toplevel
 
-	# Fine-tune from an existing task-specific checkpoint or start from base model.
-	model_file = "best.pt" if args.mode == "finetune" else "yolo11m.pt"
-	model_path = resolve_path(model_file, script_dir)
+    # مجلد السكريبت نفسه → هنحل منه المسارات النسبية
+    script_dir = Path(__file__).resolve().parent
 
-	# Path to dataset YAML describing train/val/test image and label folders.
-	data_yaml = resolve_path(args.data, script_dir)
+    # ──────────────────────────────────────────────────────────────────────
+    # اختيار الـ checkpoint
+    # ──────────────────────────────────────────────────────────────────────
+    # finetune → نكمل من best.pt اللي عندنا (أسرع convergence وأعلى starting mAP)
+    # scratch  → نبدأ من yolo11m.pt الرسمي (أفضل لو best.pt كان overfit أو على داتا مختلفة)
+    model_file = "best.pt" if args.mode == "finetune" else "yolo11m.pt"
+    model_path = resolve_path(model_file, script_dir)
 
-	if not model_path.exists():
-		raise FileNotFoundError(
-			f"Model checkpoint not found: {model_path}. "
-			"Place the selected checkpoint in the training folder or provide a valid path."
-		)
+    # مسار ملف الداتا YAML اللي فيه train/val paths وأسماء الـ classes
+    data_yaml = resolve_path(args.data, script_dir)
 
-	if not data_yaml.exists():
-		raise FileNotFoundError(
-			f"Dataset YAML not found: {data_yaml}. "
-			"Place dataset YAML in the training folder or edit data_yaml."
-		)
+    # ──────────────────────────────────────────────────────────────────────
+    # التحقق من وجود الملفات قبل البدء
+    # ──────────────────────────────────────────────────────────────────────
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Model checkpoint not found: {model_path}\n"
+            "Place the checkpoint in the training folder or provide a valid path."
+        )
 
-	# Load YOLO model from selected checkpoint (fine-tune or scratch-pretrained).
-	model = YOLO(str(model_path))
+    if not data_yaml.exists():
+        raise FileNotFoundError(
+            f"Dataset YAML not found: {data_yaml}\n"
+            "Place the YAML in the training folder or update the path."
+        )
 
-	# All training arguments are explicit and documented for clarity.
-	train_args = {
-		"data": str(data_yaml),  # Custom dataset config file in YOLO YAML format.
-		"single_cls": True,  # Force one-class training for unified "Swimmer" labels.
-		"epochs": 80,  # Total number of training passes over the dataset.
-		"imgsz": 640,  # Input image size; 640 is a good speed/accuracy point for RTX 3050.
-		"batch": 8,  # Batch size tuned to typical 4GB RTX 3050 VRAM constraints.
-		"optimizer": "SGD",  # Requested optimizer for stable, well-understood convergence.
-		"lr0": 0.003,  # Initial learning rate at epoch 0.
-		"momentum": 0.937,  # SGD momentum to smooth updates and accelerate training.
-		"weight_decay": 0.0005,  # L2 regularization to reduce overfitting.
-		"cos_lr": True,  # Enable cosine learning rate decay schedule.
-		"warmup_epochs": 3,  # Gradually ramp up training during early epochs.
-		"patience": 25,  # Early stopping patience to reduce overfitting on repeated frames.
-		"close_mosaic": 15,  # Disable mosaic in final epochs to stabilize box refinement.
-		"hsv_h": 0.015,  # Hue jitter for mild color robustness.
-		"hsv_s": 0.5,  # Saturation jitter for stronger color augmentation.
-		"hsv_v": 0.35,  # Value/brightness jitter for illumination changes.
-		"degrees": 3.0,  # Small random rotation to handle camera angle shifts.
-		"translate": 0.08,  # Random translation for positional robustness.
-		"scale": 0.35,  # Scale jitter to simulate swimmer size variation.
-		"shear": 0.5,  # Small shear to model perspective-like geometric changes.
-		"perspective": 0.0003,  # Very light perspective transform to avoid label distortion.
-		"fliplr": 0.5,  # Horizontal flip probability.
-		"flipud": 0.0,  # Vertical flip disabled for realistic swimming orientation.
-		"mosaic": 0.25,  # Balanced mosaic to improve context diversity.
-		"mixup": 0.05,  # Light mixup to regularize without over-blending samples.
-		"erasing": 0.1,  # Random erasing to improve occlusion robustness.
-		"amp": True,  # Automatic mixed precision for faster training and lower VRAM usage.
-		"workers": 4,  # Data loader workers to keep GPU fed without oversubscription.
-		"save_period": 10,  # Save checkpoint every 10 epochs.
-		"val": True,  # Run validation during training.
-		"plots": True,  # Generate training curves and diagnostics plots.
-		"device": 0,  # Use first CUDA GPU (expected RTX 3050 on single-GPU setup).
-		"project": "runs/train",  # Parent folder for experiment outputs.
-		"name": f"yolo_swimmer_{args.mode}_rtx3050",  # Distinct run name per training mode.
-		"exist_ok": True,  # Reuse run folder name if it already exists.
-	}
+    # تحميل الموديل من الـ checkpoint المختار
+    model = YOLO(str(model_path))
 
-	print("Starting YOLO training with the following setup:")
-	print(f"  Mode:             {args.mode}")
-	print(f"  Model checkpoint: {model_path}")
-	print(f"  Dataset YAML:     {data_yaml}")
-	print(f"  Epochs:           {train_args['epochs']}")
-	print(f"  Image size:       {train_args['imgsz']}")
-	print(f"  Batch size:       {train_args['batch']}")
+    # ──────────────────────────────────────────────────────────────────────
+    # إعدادات التدريب (كل parameter موضح سببه)
+    # ──────────────────────────────────────────────────────────────────────
+    train_args = {
+        # ── داتا ─────────────────────────────────────────────────────────
+        "data": str(data_yaml),   # ملف الـ YAML بتفاصيل الداتا
+        "single_cls": True,       # نعامل كل الـ classes كـ class واحدة "Swimmer"
+                                  # مهم جداً لأن عندنا class واحدة بس
 
-	# Launch training and capture results metadata.
-	results = model.train(**train_args)
+        # ── جدول التدريب ──────────────────────────────────────────────────
+        "epochs": 80,             # عدد مرات التدريب على الداتا كاملة
+        "imgsz": 640,             # حجم الصورة → توازن ممتاز بين الدقة والسرعة على RTX 3050
+        "batch": 8,               # عدد الصور في كل batch → آمن لـ 4GB VRAM
 
-	# Ultralytics returns save_dir, where weights/best.pt is stored.
-	save_dir = Path(results.save_dir).resolve()
-	best_model_path = (save_dir / "weights" / "best.pt").resolve()
+        # ── الـ optimizer ─────────────────────────────────────────────────
+        "optimizer": "SGD",       # SGD أفضل من Adam للـ generalization في التدريب الطويل
+        "lr0": 0.003,             # learning rate ابتدائي → منخفض لأننا بنعمل fine-tune
+        "momentum": 0.937,        # يساعد في تثبيت التحديثات وتسريع الـ convergence
+        "weight_decay": 0.0005,   # L2 regularization → يقلل overfitting
 
-	print("\nTraining finished.")
-	print(f"Results directory: {save_dir}")
-	print(f"Best model path:   {best_model_path}")
+        # ── جدول الـ learning rate ────────────────────────────────────────
+        "cos_lr": True,           # Cosine annealing → يقلل الـ LR بشكل سلس ومنحنى
+        "warmup_epochs": 3,       # يبدأ بـ LR صغير ويزيده تدريجياً لتفادي instability
+
+        # ── منع الـ overfitting ───────────────────────────────────────────
+        "patience": 25,           # يوقف التدريب لو مفيش تحسن لـ 25 epoch متتالية
+        "close_mosaic": 15,       # يوقف الـ mosaic augmentation في آخر 15 epoch
+                                  # عشان الموديل يستقر على detections واضحة
+
+        # ── تعديلات الألوان والإضاءة ──────────────────────────────────────
+        "hsv_h": 0.015,           # تغيير بسيط في الـ hue (اللون) ± 1.5%
+        "hsv_s": 0.5,             # تغيير في الـ saturation ± 50% → محاكاة بيئات إضاءة مختلفة
+        "hsv_v": 0.35,            # تغيير في الـ brightness ± 35% → مهم جداً للمسابح المختلفة
+
+        # ── التحويلات الهندسية ────────────────────────────────────────────
+        "degrees": 3.0,           # دوران بسيط ± 3° → السباحون دايماً أفقيين تقريباً
+        "translate": 0.08,        # تحريك الصورة 8% → يحاكي تحرك السباح في الإطار
+        "scale": 0.35,            # تغيير الحجم ± 35% → يعامل السباحين في مسافات مختلفة
+        "shear": 0.5,             # ميل بسيط ± 0.5° → يتعامل مع كاميرات مش مستوية تماماً
+        "perspective": 0.0003,    # تشويه perspective خفيف → يحاكي زوايا كاميرا مختلفة
+
+        # ── القلب والتدوير ────────────────────────────────────────────────
+        "fliplr": 0.5,            # قلب أفقي 50% → يضاعف الداتا (يسار = يمين)
+        "flipud": 0.0,            # ❌ بدون قلب رأسي → سباح مقلوب مش منطقي
+
+        # ── augmentations متقدمة ──────────────────────────────────────────
+        "mosaic": 0.25,           # دمج 4 صور في صورة واحدة 25% → تنوع بدون مبالغة
+        "mixup": 0.05,            # دمج صورتين معاً 5% → regularization خفيف
+        "erasing": 0.1,           # حذف جزء عشوائي 10% → يحاكي إخفاء السباح بالمياه أو الحبال
+
+        # ── إعدادات الهاردوير ─────────────────────────────────────────────
+        "amp": True,              # Automatic Mixed Precision → يوفر VRAM ويسرع التدريب
+        "workers": 4,             # عدد threads لتحميل الداتا (مناسب لـ quad-core)
+        "device": 0,              # استخدام أول GPU (RTX 3050)
+
+        # ── الحفظ والمخرجات ───────────────────────────────────────────────
+        "save_period": 10,        # حفظ checkpoint كل 10 epochs (حماية من الـ crashes)
+        "val": True,              # تقييم على الـ validation set بعد كل epoch
+        "plots": True,            # رسم curves للـ loss وmAP والـ precision/recall
+        "project": "runs/train",  # المجلد الرئيسي لحفظ نتائج التدريب
+        "name": f"yolo_swimmer_{args.mode}_rtx3050",  # اسم مميز لكل run
+        "exist_ok": True,         # لو المجلد موجود → يستخدمه بدون إنشاء مجلد جديد
+    }
+
+    # ──────────────────────────────────────────────────────────────────────
+    # طباعة ملخص قبل البدء
+    # ──────────────────────────────────────────────────────────────────────
+    print("Starting YOLO training with the following setup:")
+    print(f"  Mode:             {args.mode}")
+    print(f"  Model checkpoint: {model_path}")
+    print(f"  Dataset YAML:     {data_yaml}")
+    print(f"  Epochs:           {train_args['epochs']}")
+    print(f"  Image size:       {train_args['imgsz']}")
+    print(f"  Batch size:       {train_args['batch']}")
+
+    # ──────────────────────────────────────────────────────────────────────
+    # بدء التدريب
+    # ──────────────────────────────────────────────────────────────────────
+    results = model.train(**train_args)
+
+    # ──────────────────────────────────────────────────────────────────────
+    # ملخص بعد التدريب
+    # ──────────────────────────────────────────────────────────────────────
+    # Ultralytics بيرجع save_dir → فيه كل النتائج والـ weights
+    save_dir = Path(results.save_dir).resolve()
+    best_model_path = (save_dir / "weights" / "best.pt").resolve()
+
+    print("\nTraining complete. ✅")
+    print(f"Results directory: {save_dir}")
+    print(f"Best model path:   {best_model_path}")
 
 
 if __name__ == "__main__":
-	main()
+    main()

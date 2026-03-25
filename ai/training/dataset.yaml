@@ -1,3 +1,4 @@
+path: C:\Swimming-analysis\Swimming-analysis\ai\training\Dataset
 train: train/images
 val: valid/images
 test: test/images
