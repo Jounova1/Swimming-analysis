@@ -10,7 +10,6 @@ sets = {
     "Testset": "test"
 }
 
-# كل حاجة swimmer = class 0
 class_map = {
     "swimmer": 0,
     "cap": 0
@@ -34,13 +33,14 @@ for json_folder, out_folder in sets.items():
         txt_lines = []
 
         for ann in data.get("annotations", []):
-            if ann.get("type") != "rectangle":
+
+            # ✅ التصحيح هنا
+            if ann.get("geometry", {}).get("type") != "rectangle":
                 continue
 
             vertices = ann["geometry"]["vertices"]
             x1, y1, x2, y2 = vertices
 
-            # already normalized → نحول مباشرة
             x_center = (x1 + x2) / 2
             y_center = (y1 + y2) / 2
             width = abs(x2 - x1)
