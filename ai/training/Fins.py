@@ -7,9 +7,9 @@ from ultralytics import YOLO
 # =========================
 # ⚙️ CONFIG
 # =========================
-VIDEOS_DIR = r"C:\Swimming-analysis\Swimming-analysis\ai\dataset\videos"
-OUTPUT_DIR = r"C:\Swimming-analysis\Swimming-analysis\ai\fins_dataset"
-MODEL_PATH = r"C:\Swimming-analysis\Swimming-analysis\ai\training\best (1).pt"
+VIDEOS_DIR = r"C:\Swimming-analysis\ai\videos"
+OUTPUT_DIR = r"C:\Swimming-analysis\ai\fins_dataset"
+MODEL_PATH = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
 
 FRAME_SKIP = 5
 IMG_SIZE = 640

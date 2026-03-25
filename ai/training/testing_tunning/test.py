@@ -1,9 +1,9 @@
 from ultralytics import YOLO
 
-model = YOLO("last.pt")
+model = YOLO(r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt")
 results = model.predict(
-    source="T100000.jpg",
-    conf=0.05,
+    source=r"C:\Swimming-analysis\ai\fins_dataset\train\images\flip_turn.mp4_13.jpg",
+    conf=0.5,
     save=True,
     imgsz=640
 )

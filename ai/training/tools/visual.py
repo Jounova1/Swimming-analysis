@@ -1,9 +1,9 @@
 import cv2 
 
-img = cv2.imread(r"C:\Swimming-analysis\Swimming-analysis\ai\training\Dataset\test\images\Bere_7_jpg.rf.dcabb2216ae1a15e2a2428fb39284a5f.jpg")
+img = cv2.imread(r"C:\Swimming-analysis\ai\fins_dataset\train\images\bf.mp4_6.jpg") # read the image
 h, w, _ = img.shape # get image dimensions for converting YOLO format to pixel coordinates
 
-with open(r"C:\Swimming-analysis\Swimming-analysis\ai\training\Dataset\test\labels\Bere_7_jpg.rf.dcabb2216ae1a15e2a2428fb39284a5f.txt") as f:
+with open(r"C:\Swimming-analysis\ai\fins_dataset\train\labels\bf.mp4_6.txt") as f:
     for line in f:
         c, x, y, bw, bh = map(float, line.split()) # read class and bounding box coordinates from YOLO format (class, x_center, y_center, width, height)
         

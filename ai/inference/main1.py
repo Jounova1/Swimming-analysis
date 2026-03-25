@@ -43,8 +43,8 @@ def _load_cv2():
 cv2 = _load_cv2()
 
 # --- Config ---
-MODEL_PATH   = r"C:\Swimming-analysis\Swimming-analysis\ai\training\best (1).pt"
-VIDEO_SOURCE = r"C:\Swimming-analysis\Swimming-analysis\ai\training\videoplayback (1).mp4"   # or 0 for Pi camera live feed
+MODEL_PATH   = r"ai/training/runs/train/yolo11m_swimmer_finetune_v7/best.pt"
+VIDEO_SOURCE = r"C:\Swimming-analysis\ai\videos\flip_turn.mp4"   # or 0 for Pi camera live feed
 CONF         = 0.5             # confidence threshold (accept down to 20%)
 INPUT_WIDTH  = 640              # resize frame before inference
 INPUT_HEIGHT = 360
@@ -67,10 +67,13 @@ print("=" * 60 + "\n")
 model = YOLO(MODEL_PATH)
 cap   = cv2.VideoCapture(VIDEO_SOURCE)
 
-# Get video FPS for frame-based timing
+# Get real video FPS
 fps = cap.get(cv2.CAP_PROP_FPS)
-if fps == 0 or fps < 1:
-    fps = 30.0  # Default to 30 FPS if unable to detect
+
+if fps == 0 or fps is None:
+    fps = 30  # fallback
+
+print(f"Video FPS (REAL): {fps}")
 
 # Initialize bug-fix components
 # Note: max_age_frames=3 means tracks are forgotten after 3 frames of not being detected
@@ -423,7 +426,8 @@ while True:
     
     frame_count += 1
 
-    if cv2.waitKey(1) == 27:  # ESC to quit
+    delay = int(1000 / fps)
+    if cv2.waitKey(delay) == 27:
         break
 
 cap.release()

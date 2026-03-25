@@ -7,8 +7,8 @@ from ultralytics import YOLO
 from detection_smoother import DetectionSmoother
 
 # --- Config ---
-MODEL_PATH = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
-VIDEO_SOURCE = r"C:\Swimming-analysis\ai\training\dataset\images\videos\surface_6.mp4"  # or 0 for live feed
+MODEL_PATH = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v7\weights\best.pt"
+VIDEO_SOURCE = r"C:\Swimming-analysis\ai\videos\surface_6.mp4"  # or 0 for live feed
 
 # --- Required bug-fix parameters ---
 CONF = 0.20  # Lower confidence threshold to 20%
