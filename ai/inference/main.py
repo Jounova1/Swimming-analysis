@@ -16,24 +16,21 @@ if importlib.util.find_spec("cv2") is None:
 from ultralytics import YOLO
 import cv2
 
-# لو detection_smoother مش موجود
-# ارفع الملف أو عدّل path
 from detection_smoother import DetectionSmoother
 
-
 # ================== CONFIG ==================
-MODEL_PATH   = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
-VIDEO_SOURCE = r"C:\Swimming-analysis\ai\videos\flip_turn.mp4"
+MODEL_PATH   = r"C:\Swimming-analysis\ai\training\runs\train\best (2).pt"
+VIDEO_SOURCE = r"C:\Swimming-analysis\ai\videos\Freestyle Swimming Technique  Stroke - Speedo (720p, h264).mp4"
 OUTPUT_DIR   = r"C:\Swimming-analysis\ai\outputs"
-OUTPUT_NAME  = "flip_turn_annotated.mp4"
+OUTPUT_NAME  = "under_3_annotated.mp4"
 save_path    = os.path.join(OUTPUT_DIR, OUTPUT_NAME)
+
 CONF         = 0.5
-INPUT_WIDTH  = 640  # ↓ أسرع
+INPUT_WIDTH  = 640
 INPUT_HEIGHT = 360
 
 SAVE_OUTPUT  = True
-
-pool_length = 50.0
+pool_length  = 50.0
 
 print("=" * 50)
 print("SWIMMER ANALYSIS SYSTEM")
@@ -84,6 +81,9 @@ laps_completed = 0
 
 y_hist = deque(maxlen=5)
 
+# 🔒 LOCK VARIABLE
+locked_id = None
+
 # ================== MAIN LOOP ==================
 while True:
     t_start = time.time()
@@ -113,26 +113,36 @@ while True:
     smoothed = smoother.get_smoothed_detections()
 
     annotated = frame.copy()
-
     has_detection = False
 
+    # ================= LOCK + STROKE =================
     for track_id, conf, xyxy, is_pred in smoothed:
-        x1, y1, x2, y2 = map(int, xyxy)
 
+        # أول مرة → اقفل على أول swimmer
+        if locked_id is None:
+            locked_id = track_id
+
+        # تجاهل أي swimmer تاني
+        if track_id != locked_id:
+            continue
+
+        x1, y1, x2, y2 = map(int, xyxy)
         has_detection = True
 
         # draw box
         color = (0,255,0)
         cv2.rectangle(annotated,(x1,y1),(x2,y2),color,2)
 
-        # center for stroke
+        # ================= STROKE ANALYSIS =================
         center_y = (y1 + y2) / 2
         y_hist.append(center_y)
 
-        if len(y_hist) >= 3:
-            if y_hist[-2] < y_hist[-3] and y_hist[-2] < y_hist[-1]:
-                pass
-            elif y_hist[-2] > y_hist[-3] and y_hist[-2] > y_hist[-1]:
+        if len(y_hist) >= 5:
+            dy1 = y_hist[-1] - y_hist[-2]
+            dy2 = y_hist[-2] - y_hist[-3]
+
+            # peak detection (فلترة noise)
+            if dy2 > 0 and dy1 < 0 and abs(dy2 - dy1) > 2:
                 stroke_count += 1
 
     # ================= TIMER =================
