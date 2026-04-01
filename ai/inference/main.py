@@ -28,7 +28,7 @@ from detection_smoother import DetectionSmoother
 
 # ================== CONFIG ==================
 MODEL_PATH   = r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\training\best (1).pt"
-VIDEO_SOURCE = r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\inference\habl sba7a.mp4"
+VIDEO_SOURCE = r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\inference\WhatsApp Video 2026-03-28 at 7.18.43 PM.mp4"
 OUTPUT_DIR   = r"C:\Users\sigma\OneDrive\Desktop"
 OUTPUT_NAME  = "breast_annotated.mp4"
 save_path    = os.path.join(OUTPUT_DIR, OUTPUT_NAME)
@@ -157,9 +157,9 @@ while True:
             # Improved stroke counting logic with debouncing
             avg_angle = np.mean(mono_angle_history) if len(mono_angle_history) > 0 else mono_angle
             
-            if avg_angle >= 140:
+            if avg_angle >= 160:
                 stroke_stage = "mafrood"
-            elif avg_angle < 90 and stroke_stage == "mafrood" and stroke_cooldown == 0:
+            elif avg_angle < 120 and stroke_stage == "mafrood" and stroke_cooldown == 0:
                 stroke_stage = "matny"
                 stroke_count += 1
                 stroke_cooldown = 15  # Prevent double-counting for 15 frames (~0.5 seconds)
