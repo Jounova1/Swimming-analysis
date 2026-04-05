@@ -24,7 +24,7 @@ def get_split(index: int, total: int) -> str:
         return "test"
 
 
-def extract_frames(video_path: Path, interval: int, dataset_root: Path, class_name: str) -> dict:
+def extract_frames(video_path: r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\inference\underwater_2.mp4", interval: int, dataset_root: r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai", class_name: str) -> dict:
     # create all folders
     for split in ["train", "val", "test"]:
         (dataset_root / "images" / split).mkdir(parents=True, exist_ok=True)
@@ -138,14 +138,19 @@ def main():
     parser.add_argument(
         "input",
         type=Path,
-        nargs="+",
+        nargs="*",
         help="Folder containing videos OR one or more video files directly"
     )
-    parser.add_argument("--interval",   type=int,  default=30,             help="Extract every N frames (default: 30)")
+    parser.add_argument("--interval",   type=int,  default=1,             help="Extract every N frames (default: 30)")
     parser.add_argument("--output",     type=Path, default=Path("dataset"), help="Dataset root folder (default: dataset)")
     parser.add_argument("--class-name", type=str,  default=None,           help="Override class name for all videos (optional)")
 
     args = parser.parse_args()
+
+    if not args.input:
+        default_video = Path(r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\inference\underwater_2.mp4")
+        print(f"  No input provided. Using default video: {default_video}")
+        args.input = [default_video]
 
     if args.interval <= 0:
         raise ValueError("--interval must be a positive integer")

@@ -24,10 +24,10 @@ import mediapipe as mp
 from detection_smoother import DetectionSmoother
 
 # ================== CONFIG ==================
-MODEL_PATH   = r"C:\Swimming-analysis\ai\training\runs\train\yolo11m_swimmer_finetune_v2\weights\best.pt"
-VIDEO_SOURCE = r"C:\Swimming-analysis\ai\videos\flip_turn.mp4"
-OUTPUT_DIR   = r"C:\Swimming-analysis\ai\outputs"
-OUTPUT_NAME  = "flip_turn_annotated.mp4"
+MODEL_PATH   = r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\training\best.pt"
+VIDEO_SOURCE = r"C:\Users\sigma\OneDrive\Desktop\Swimming-analysis\ai\inference\underwater_2.mp4"
+OUTPUT_DIR   = r"C:\Users\sigma\OneDrive\Desktop"
+OUTPUT_NAME  = "Output_annotated.mp4"
 save_path    = os.path.join(OUTPUT_DIR, OUTPUT_NAME)
 
 CONF         = 0.5
@@ -105,6 +105,12 @@ distance_traveled = 0.0
 laps_completed = 0
 
 y_hist = deque(maxlen=5)
+
+# Initialize missing variables
+stroke_cooldown = 0
+stroke_stage = None
+mono_angle_history = deque(maxlen=5)
+locked_id = None
 
 # ================== MAIN LOOP ==================
 while True:
